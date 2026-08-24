@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(BitgetPricePlugin VERSION 1.1.0 LANGUAGES CXX)
+project(BitgetPricePlugin VERSION 1.2.0 LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "BitgetPricePlugin can only be built for Windows.")

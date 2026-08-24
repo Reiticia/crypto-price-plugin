@@ -3,7 +3,9 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <array>
 #include <cwctype>
+#include <string_view>
 
 namespace bitget
 {
@@ -39,6 +41,24 @@ bool IsValidSymbol(const std::wstring& value)
         return (character >= L'A' && character <= L'Z') ||
                (character >= L'0' && character <= L'9');
     });
+}
+
+std::wstring FormatInstrumentSymbol(const Instrument& instrument)
+{
+    if (instrument.category != L"SPOT") return instrument.symbol;
+
+    static constexpr std::array<std::wstring_view, 12> quoteCurrencies{
+        L"USDT", L"USDC", L"FDUSD", L"TUSD", L"DAI", L"BTC",
+        L"ETH", L"BGB", L"EUR", L"BRL", L"TRY", L"GBP"
+    };
+    for (const std::wstring_view quote : quoteCurrencies)
+    {
+        if (instrument.symbol.size() <= quote.size()) continue;
+        const std::size_t offset = instrument.symbol.size() - quote.size();
+        if (instrument.symbol.compare(offset, quote.size(), quote) == 0)
+            return instrument.symbol.substr(0, offset) + L"/" + std::wstring(quote);
+    }
+    return instrument.symbol;
 }
 
 const wchar_t* PriceTypeKey(PriceType type)
@@ -88,8 +108,9 @@ Settings ConfigStore::Load() const
         Instrument instrument;
         instrument.category = ReadString(path_, section.c_str(), L"Category", L"USDT-FUTURES");
         instrument.symbol = NormalizeSymbol(ReadString(path_, section.c_str(), L"Symbol", L""));
-        if ((instrument.category == L"USDT-FUTURES" || instrument.category == L"USDC-FUTURES" ||
-             instrument.category == L"COIN-FUTURES") && IsValidSymbol(instrument.symbol))
+        if ((instrument.category == L"SPOT" || instrument.category == L"USDT-FUTURES" ||
+             instrument.category == L"USDC-FUTURES" || instrument.category == L"COIN-FUTURES") &&
+            IsValidSymbol(instrument.symbol))
             settings.instruments.push_back(std::move(instrument));
     }
     return settings;

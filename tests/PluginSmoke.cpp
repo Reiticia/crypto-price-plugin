@@ -46,7 +46,7 @@ int wmain(int argumentCount, wchar_t** arguments)
         const std::wstring aggregate = plugin->GetItem(0)->GetItemValueText();
         valid = plugin->GetItem(1) && plugin->GetItem(2) && !plugin->GetItem(3) &&
                 aggregate.find(L"BTCUSDT") != std::wstring::npos &&
-                aggregate.find(L"ETHUSDT") != std::wstring::npos;
+                aggregate.find(L"ETH/USDT") != std::wstring::npos;
     }
     if (valid)
         std::wcout << L"Loaded: " << plugin->GetInfo(ITMPlugin::TMI_NAME) << L" (API "

@@ -2,15 +2,16 @@
 
 ## 1. 项目概述
 
-BitgetPrice 是一个面向 TrafficMonitor 的 Windows C++ 插件，用于显示 Bitget UTA 合约行情。当前版本为 1.1.0。
+BitgetPrice 是一个面向 TrafficMonitor 的 Windows C++ 插件，用于显示 Bitget UTA 现货与合约行情。当前版本为 1.2.0。
 
 主要能力：
 
-- 最多配置 16 个合约；
-- 支持 `USDT-FUTURES`、`USDC-FUTURES` 和 `COIN-FUTURES`；
-- 支持最新成交价、标记价格和指数价格；
+- 最多配置 16 个现货或合约标的；
+- 支持 `SPOT`、`USDT-FUTURES`、`USDC-FUTURES` 和 `COIN-FUTURES`；
+- 合约支持最新成交价、标记价格和指数价格，现货固定显示最新成交价；
+- 合约显示为 `BTCUSDT`，现货显示为 `BTC/USDT`；
 - 价格和 24 小时涨跌幅统一保留两位小数；
-- 第一个显示项汇总全部合约，后续显示项分别对应单个合约；
+- 第一个显示项汇总全部标的，后续显示项分别对应单个标的；
 - 后台请求行情，不阻塞 TrafficMonitor 绘制线程。
 
 ## 2. 开发环境
@@ -36,7 +37,7 @@ BitgetPrice 是一个面向 TrafficMonitor 的 Windows C++ 插件，用于显示
 | `src/dllmain.cpp` | DLL 入口和模块句柄 |
 | `tests/Tests.cpp` | 配置与 JSON 解析单元测试 |
 | `tests/PluginSmoke.cpp` | DLL ABI、多显示项及实时行情烟雾测试 |
-| `tests/fixtures/BitgetPrice.ini` | 双合约测试配置 |
+| `tests/fixtures/BitgetPrice.ini` | 一个合约加一个现货的混合测试配置 |
 
 ## 4. 运行架构
 
@@ -46,7 +47,7 @@ TrafficMonitor::DataRequired
         ├─ 应用上一轮后台请求结果
         └─ 到达刷新时间后启动工作线程
                     │
-                    ├─ 按合约类别分组
+                    ├─ 按市场类别分组
                     ├─ 每种类别请求一次 Bitget UTA ticker
                     ├─ 解析并匹配用户配置的 symbol
                     └─ 写入 pending 结果
@@ -54,13 +55,13 @@ TrafficMonitor::DataRequired
                               └─ 下一次 DataRequired 更新显示缓存
 ```
 
-同一类别无论配置多少合约都只请求一次 `/api/v3/market/tickers`，随后在本地匹配交易对。这可以减少请求次数，并避免触碰 Bitget 的 IP 限频。
+同一类别无论配置多少标的都只请求一次 `/api/v3/market/tickers`，随后在本地匹配交易对。这可以减少请求次数，并避免触碰 Bitget 的 IP 限频。
 
 ### 显示项规则
 
-- `GetItem(0)`：合约汇总项，ID 固定为 `BitgetContractPrice0`。保留该 ID 是为了让旧版本已启用的第一个任务栏项目在升级后自动变成汇总显示。
-- `GetItem(1..N)`：每个合约的独立显示项，ID 为 `BitgetContractPriceItem0..15`。
-- 没有配置合约时仍返回一个占位项，提示用户打开插件选项。
+- `GetItem(0)`：行情汇总项，ID 固定为 `BitgetContractPrice0`。保留该 ID 是为了让旧版本已启用的第一个任务栏项目在升级后自动变成汇总显示。
+- `GetItem(1..N)`：每个标的的独立显示项，ID 为 `BitgetContractPriceItem0..15`。
+- 没有配置标的时仍返回一个占位项，提示用户打开插件选项。
 - `GetItemValueText()` 只返回缓存文本，绝不能在此方法内请求网络。
 
 ## 5. TrafficMonitor 生命周期
@@ -70,10 +71,10 @@ TrafficMonitor::DataRequired
 | `TMPluginGetInstance` | 返回进程内唯一插件实例 |
 | `OnInitialize` | 获取 TrafficMonitor 插件配置目录 |
 | `OnExtenedInfo(EI_CONFIG_DIR)` | 加载 `BitgetPrice.ini` 并触发刷新 |
-| `GetItem` | 返回汇总项或独立合约显示项 |
+| `GetItem` | 返回汇总项或独立标的显示项 |
 | `DataRequired` | 应用缓存结果并按间隔调度后台刷新 |
-| `ShowOptionsDialog` | 打开多合约配置窗口并保存设置 |
-| `GetTooltipInfo` | 返回所有合约的完整行情或错误信息 |
+| `ShowOptionsDialog` | 打开多标的配置窗口并保存设置 |
+| `GetTooltipInfo` | 返回所有标的的完整行情或错误信息 |
 | `OnPluginCommand` | 执行“立即刷新 Bitget 行情”命令 |
 
 `PluginInterface.h` 的虚函数顺序决定 DLL ABI。升级官方接口时应整体同步官方头文件，不能只插入或删除某个虚函数。
@@ -90,11 +91,12 @@ GET https://api.bitget.com/api/v3/market/tickers?category=USDT-FUTURES
 
 | 配置值 | 含义 |
 | --- | --- |
+| `SPOT` | 现货 |
 | `USDT-FUTURES` | USDT 本位合约 |
 | `USDC-FUTURES` | USDC 本位合约 |
 | `COIN-FUTURES` | 币本位合约 |
 
-使用的响应字段为 `symbol`、`lastPrice`、`markPrice`、`indexPrice`、`price24hPcnt` 和 `ts`。公共行情接口不需要 API Key。
+使用的响应字段为 `symbol`、`lastPrice`、`markPrice`、`indexPrice`、`price24hPcnt` 和 `ts`。现货响应没有 `markPrice` 和 `indexPrice`，因此无论全局价格类型如何设置，现货都使用 `lastPrice`。公共行情接口不需要 API Key。
 
 网络超时设置为连接、发送各 3 秒，接收 6 秒；单次响应上限为 16 MiB。请求失败时显示值为 `--`，详细原因写入 tooltip。
 
@@ -114,7 +116,7 @@ Category=USDT-FUTURES
 Symbol=BTCUSDT
 
 [Instrument1]
-Category=USDT-FUTURES
+Category=SPOT
 Symbol=ETHUSDT
 ```
 
@@ -124,6 +126,7 @@ Symbol=ETHUSDT
 - `PriceType` 可为 `last`、`mark` 或 `index`；
 - `Count` 范围为 0–16；
 - symbol 会转成大写，并移除空格、`/`、`-` 和 `_`；
+- INI 和 API 内部均保存 `BTCUSDT`；合约界面显示 `BTCUSDT`，现货界面按计价币拆分为 `BTC/USDT`；
 - 无配置文件时默认监控 `USDT-FUTURES/BTCUSDT`。
 
 ## 8. 构建

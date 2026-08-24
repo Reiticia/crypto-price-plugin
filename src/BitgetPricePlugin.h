@@ -82,7 +82,7 @@ private:
     void RebuildAggregate();
     void RebuildTooltip(std::size_t itemCount);
 
-    // 第 0 项是任务栏默认显示的汇总项，后续项目是每个合约的独立显示项。
+    // 第 0 项是任务栏默认显示的汇总项，后续项目是每个标的的独立显示项。
     std::array<PriceItem, kMaxInstruments + 1> items_;
     Settings settings_;
     ConfigStore config_;
@@ -98,7 +98,7 @@ private:
     std::atomic<bool> shuttingDown_{false};
     std::atomic<unsigned long long> generation_{1};
     std::chrono::steady_clock::time_point nextRefresh_{};
-    std::wstring tooltip_{L"Bitget 合约价格：等待行情"};
+    std::wstring tooltip_{L"Bitget 行情：等待数据"};
 };
 } // namespace bitget
 

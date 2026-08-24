@@ -29,11 +29,21 @@ std::wstring FormatPrice(const std::string& raw)
     return stream.str();
 }
 
-std::wstring SelectPrice(const Ticker& ticker, PriceType type)
+bool IsSpot(const Instrument& instrument)
+{
+    return instrument.category == L"SPOT";
+}
+
+std::wstring DisplaySymbol(const Instrument& instrument)
+{
+    return FormatInstrumentSymbol(instrument);
+}
+
+std::wstring SelectPrice(const Ticker& ticker, PriceType type, bool spot)
 {
     const std::string* value = &ticker.lastPrice;
-    if (type == PriceType::Mark) value = &ticker.markPrice;
-    else if (type == PriceType::Index) value = &ticker.indexPrice;
+    if (!spot && type == PriceType::Mark) value = &ticker.markPrice;
+    else if (!spot && type == PriceType::Index) value = &ticker.indexPrice;
     return FormatPrice(*value);
 }
 
@@ -51,7 +61,7 @@ std::wstring FormatChange(const std::string& raw)
 }
 
 PriceItem::PriceItem(std::size_t index)
-    : name_(L"Bitget 合约 " + std::to_wstring(index + 1)),
+    : name_(L"Bitget 行情 " + std::to_wstring(index + 1)),
       id_(L"BitgetContractPrice" + std::to_wstring(index)),
       label_(L"Bitget: "), value_(L"--")
 {
@@ -112,7 +122,7 @@ ITMPlugin::OptionReturn BitgetPricePlugin::ShowOptionsDialog(void* parent)
     draft.refreshSeconds = std::clamp(draft.refreshSeconds, 2, 300);
     if (!config_.Save(draft))
         MessageBoxW(static_cast<HWND>(parent), L"无法保存 BitgetPrice.ini，请检查配置目录权限。",
-                    L"Bitget 合约价格", MB_OK | MB_ICONWARNING);
+                    L"Bitget 行情", MB_OK | MB_ICONWARNING);
     ApplySettings(std::move(draft));
     StartRefresh(true);
     return OR_OPTION_CHANGED;
@@ -122,11 +132,11 @@ const wchar_t* BitgetPricePlugin::GetInfo(PluginInfoIndex index)
 {
     switch (index)
     {
-    case TMI_NAME: return L"Bitget 合约价格";
-    case TMI_DESCRIPTION: return L"同时监控多个 Bitget UTA 合约的最新价、标记价或指数价";
+    case TMI_NAME: return L"Bitget 行情";
+    case TMI_DESCRIPTION: return L"同时监控多个 Bitget UTA 现货与合约行情";
     case TMI_AUTHOR: return L"OpenAI Codex";
     case TMI_COPYRIGHT: return L"Copyright (C) 2026";
-    case TMI_VERSION: return L"1.1.0";
+    case TMI_VERSION: return L"1.2.0";
     case TMI_URL: return L"https://www.bitget.com/zh-CN/api-doc/uta/public/Tickers";
     default: return L"";
     }
@@ -173,13 +183,13 @@ void BitgetPricePlugin::ApplySettings(Settings settings)
     {
         std::lock_guard<std::mutex> lock(settingsMutex_);
         settings_ = std::move(settings);
-        items_[0].name_ = L"Bitget 合约汇总";
+        items_[0].name_ = L"Bitget 行情汇总";
         items_[0].label_ = L"Bitget: ";
         for (std::size_t index = 0; index < settings_.instruments.size(); ++index)
         {
             PriceItem& item = items_[index + 1];
-            item.name_ = L"Bitget " + settings_.instruments[index].symbol;
-            item.label_ = settings_.instruments[index].symbol + L": ";
+            item.name_ = L"Bitget " + DisplaySymbol(settings_.instruments[index]);
+            item.label_ = DisplaySymbol(settings_.instruments[index]) + L": ";
             item.value_ = L"--";
             item.detail_ = L"等待行情";
         }
@@ -260,7 +270,7 @@ void BitgetPricePlugin::RefreshWorker(Settings settings, unsigned long long gene
             const auto ticker = tickers.find(WideToAscii(result.instrument.symbol));
             if (ticker == tickers.end())
             {
-                result.error = L"未找到该合约，请检查类别和交易对";
+                result.error = L"未找到该标的，请检查市场类型和交易对";
                 continue;
             }
             result.success = true;
@@ -280,29 +290,30 @@ void BitgetPricePlugin::RefreshWorker(Settings settings, unsigned long long gene
 void BitgetPricePlugin::UpdatePlaceholder()
 {
     if (!settings_.instruments.empty()) return;
-    items_[0].name_ = L"Bitget 合约价格（未配置）";
+    items_[0].name_ = L"Bitget 行情（未配置）";
     items_[0].label_ = L"Bitget: ";
     items_[0].value_ = L"未配置";
-    items_[0].detail_ = L"请在插件管理中打开“选项”添加合约";
+    items_[0].detail_ = L"请在插件管理中打开“选项”添加标的";
 }
 
 void BitgetPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
                                    const Settings& settings)
 {
     PriceItem& item = items_[index + 1];
-    item.name_ = L"Bitget " + result.instrument.symbol;
-    item.label_ = result.instrument.symbol + L": ";
+    item.name_ = L"Bitget " + DisplaySymbol(result.instrument);
+    item.label_ = DisplaySymbol(result.instrument) + L": ";
     if (!result.success)
     {
         item.value_ = L"--";
         item.detail_ = result.error.empty() ? L"行情获取失败" : result.error;
         return;
     }
-    item.value_ = SelectPrice(result.ticker, settings.priceType);
+    item.value_ = SelectPrice(result.ticker, settings.priceType, IsSpot(result.instrument));
     if (settings.showChange) item.value_ += FormatChange(result.ticker.price24hPcnt);
-    item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice) +
-                   L" | 标记 " + FormatPrice(result.ticker.markPrice) +
-                   L" | 指数 " + FormatPrice(result.ticker.indexPrice);
+    item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice);
+    if (!IsSpot(result.instrument))
+        item.detail_ += L" | 标记 " + FormatPrice(result.ticker.markPrice) +
+                        L" | 指数 " + FormatPrice(result.ticker.indexPrice);
 }
 
 void BitgetPricePlugin::RebuildAggregate()
@@ -310,11 +321,11 @@ void BitgetPricePlugin::RebuildAggregate()
     if (settings_.instruments.empty()) return;
 
     PriceItem& aggregate = items_[0];
-    aggregate.name_ = L"Bitget 合约汇总";
+    aggregate.name_ = L"Bitget 行情汇总";
     aggregate.label_ = L"Bitget: ";
     aggregate.value_.clear();
     aggregate.sample_.clear();
-    aggregate.detail_ = L"共 " + std::to_wstring(settings_.instruments.size()) + L" 个合约";
+    aggregate.detail_ = L"共 " + std::to_wstring(settings_.instruments.size()) + L" 个标的";
     for (std::size_t index = 0; index < settings_.instruments.size(); ++index)
     {
         if (index != 0)
@@ -322,15 +333,15 @@ void BitgetPricePlugin::RebuildAggregate()
             aggregate.value_ += L" | ";
             aggregate.sample_ += L" | ";
         }
-        aggregate.value_ += settings_.instruments[index].symbol + L" " + items_[index + 1].value_;
-        aggregate.sample_ += settings_.instruments[index].symbol + L" 000000.00";
+        aggregate.value_ += DisplaySymbol(settings_.instruments[index]) + L" " + items_[index + 1].value_;
+        aggregate.sample_ += DisplaySymbol(settings_.instruments[index]) + L" 000000.00";
         if (settings_.showChange) aggregate.sample_ += L" +00.00%";
     }
 }
 
 void BitgetPricePlugin::RebuildTooltip(std::size_t itemCount)
 {
-    tooltip_ = L"Bitget UTA 合约行情";
+    tooltip_ = L"Bitget UTA 行情";
     if (itemCount == 0)
     {
         tooltip_ += L"\n" + items_[0].detail_;

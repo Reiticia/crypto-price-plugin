@@ -38,6 +38,7 @@ HWND AddControl(HWND parent, const wchar_t* className, const wchar_t* text,
 
 const wchar_t* CategoryCaption(const std::wstring& category)
 {
+    if (category == L"SPOT") return L"现货";
     if (category == L"USDC-FUTURES") return L"USDC 本位合约";
     if (category == L"COIN-FUTURES") return L"币本位合约";
     return L"USDT 本位合约";
@@ -47,6 +48,7 @@ int CategoryIndex(const std::wstring& category)
 {
     if (category == L"USDC-FUTURES") return 1;
     if (category == L"COIN-FUTURES") return 2;
+    if (category == L"SPOT") return 3;
     return 0;
 }
 
@@ -54,6 +56,7 @@ std::wstring CategoryAt(int index)
 {
     if (index == 1) return L"USDC-FUTURES";
     if (index == 2) return L"COIN-FUTURES";
+    if (index == 3) return L"SPOT";
     return L"USDT-FUTURES";
 }
 }
@@ -63,7 +66,7 @@ bool OptionsWindow::Show(HWND parent, Settings& settings)
     OptionsWindow dialog(settings);
     if (!dialog.Create(parent))
     {
-        MessageBoxW(parent, L"无法创建选项窗口。", L"Bitget 合约价格", MB_OK | MB_ICONERROR);
+        MessageBoxW(parent, L"无法创建选项窗口。", L"Bitget 行情", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -120,7 +123,7 @@ bool OptionsWindow::Create(HWND parent)
         x = parentRect.left + ((parentRect.right - parentRect.left) - (rectangle.right - rectangle.left)) / 2;
         y = parentRect.top + ((parentRect.bottom - parentRect.top) - (rectangle.bottom - rectangle.top)) / 2;
     }
-    window_ = CreateWindowExW(WS_EX_DLGMODALFRAME, kWindowClass, L"Bitget 合约价格设置",
+    window_ = CreateWindowExW(WS_EX_DLGMODALFRAME, kWindowClass, L"Bitget 行情设置",
         WS_CAPTION | WS_SYSMENU, x, y, rectangle.right - rectangle.left,
         rectangle.bottom - rectangle.top, parent, nullptr, g_moduleInstance, this);
     return window_ != nullptr;
@@ -175,7 +178,7 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
 void OptionsWindow::CreateControls()
 {
-    AddControl(window_, L"STATIC", L"已监控合约（最多 16 个）", 0, 18, 14, 260, 20, -1);
+    AddControl(window_, L"STATIC", L"已监控标的（最多 16 个）", 0, 18, 14, 260, 20, -1);
     list_ = AddControl(window_, L"LISTBOX", L"", WS_BORDER | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY,
                        18, 36, 624, 186, kList);
 
@@ -183,21 +186,22 @@ void OptionsWindow::CreateControls()
     symbol_ = AddControl(window_, L"EDIT", L"", WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
                          74, 234, 176, 25, kSymbol);
     SendMessageW(symbol_, EM_SETLIMITTEXT, 32, 0);
-    AddControl(window_, L"STATIC", L"合约类型", 0, 270, 238, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"市场类型", 0, 270, 238, 65, 20, -1);
     category_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
                            340, 234, 178, 200, kCategory);
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"USDT 本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"USDC 本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"币本位合约"));
+    SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"现货"));
     SendMessageW(category_, CB_SETCURSEL, 0, 0);
-    AddControl(window_, L"BUTTON", L"添加新合约", WS_TABSTOP | BS_PUSHBUTTON,
+    AddControl(window_, L"BUTTON", L"添加新标的", WS_TABSTOP | BS_PUSHBUTTON,
                530, 233, 112, 27, kAdd);
     AddControl(window_, L"BUTTON", L"更新选中项", WS_TABSTOP | BS_PUSHBUTTON,
                530, 267, 112, 27, kUpdate);
     AddControl(window_, L"BUTTON", L"删除选中项", WS_TABSTOP | BS_PUSHBUTTON,
                530, 301, 112, 27, kRemove);
 
-    AddControl(window_, L"STATIC", L"显示价格", 0, 18, 282, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"合约价格", 0, 18, 282, 65, 20, -1);
     priceType_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
                             88, 278, 162, 150, kPriceType);
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"最新成交价"));
@@ -227,7 +231,8 @@ void OptionsWindow::RefreshList(int selection)
     SendMessageW(list_, LB_RESETCONTENT, 0, 0);
     for (const Instrument& instrument : draft_.instruments)
     {
-        const std::wstring caption = instrument.symbol + L"    " + CategoryCaption(instrument.category);
+        const std::wstring caption = FormatInstrumentSymbol(instrument) + L"    " +
+                                     CategoryCaption(instrument.category);
         SendMessageW(list_, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(caption.c_str()));
     }
     if (selection >= 0 && selection < static_cast<int>(draft_.instruments.size()))
@@ -247,9 +252,9 @@ void OptionsWindow::LoadSelection()
     const int index = SelectedIndex();
     if (index < 0 || index >= static_cast<int>(draft_.instruments.size())) return;
     const Instrument& instrument = draft_.instruments[static_cast<std::size_t>(index)];
-    SetWindowTextW(symbol_, instrument.symbol.c_str());
+    SetWindowTextW(symbol_, FormatInstrumentSymbol(instrument).c_str());
     SendMessageW(category_, CB_SETCURSEL, CategoryIndex(instrument.category), 0);
-    SetStatus(L"修改后点击“更新选中项”；要保留它并增加新合约，请点击“添加新合约”。");
+    SetStatus(L"修改后点击“更新选中项”；要保留它并增加新标的，请点击“添加新标的”。");
 }
 
 Instrument OptionsWindow::ReadInstrument() const
@@ -273,19 +278,19 @@ void OptionsWindow::AddNew()
     const auto duplicate = std::find(draft_.instruments.begin(), draft_.instruments.end(), instrument);
     if (duplicate != draft_.instruments.end())
     {
-        SetStatus(L"该合约已经在监控列表中。 ");
+        SetStatus(L"该标的已经在监控列表中。 ");
         MessageBeep(MB_ICONWARNING);
         return;
     }
     if (draft_.instruments.size() >= kMaxInstruments)
     {
-        SetStatus(L"最多只能同时监控 16 个合约。 ");
+        SetStatus(L"最多只能同时监控 16 个标的。 ");
         MessageBeep(MB_ICONWARNING);
         return;
     }
     draft_.instruments.push_back(std::move(instrument));
     RefreshList(static_cast<int>(draft_.instruments.size() - 1));
-    SetStatus(L"新合约已添加；点击“确定”后写入配置并立即刷新。 ");
+    SetStatus(L"新标的已添加；点击“确定”后写入配置并立即刷新。 ");
 }
 
 void OptionsWindow::UpdateSelected()
@@ -293,7 +298,7 @@ void OptionsWindow::UpdateSelected()
     const int selected = SelectedIndex();
     if (selected < 0 || selected >= static_cast<int>(draft_.instruments.size()))
     {
-        SetStatus(L"请先在列表中选择要更新的合约。 ");
+        SetStatus(L"请先在列表中选择要更新的标的。 ");
         MessageBeep(MB_ICONWARNING);
         return;
     }
@@ -307,7 +312,7 @@ void OptionsWindow::UpdateSelected()
     const auto duplicate = std::find(draft_.instruments.begin(), draft_.instruments.end(), instrument);
     if (duplicate != draft_.instruments.end() && duplicate != draft_.instruments.begin() + selected)
     {
-        SetStatus(L"该合约已经在监控列表中。 ");
+        SetStatus(L"该标的已经在监控列表中。 ");
         MessageBeep(MB_ICONWARNING);
         return;
     }
@@ -321,7 +326,7 @@ void OptionsWindow::RemoveSelected()
     const int selected = SelectedIndex();
     if (selected < 0 || selected >= static_cast<int>(draft_.instruments.size()))
     {
-        SetStatus(L"请先在列表中选择要删除的合约。 ");
+        SetStatus(L"请先在列表中选择要删除的标的。 ");
         return;
     }
     draft_.instruments.erase(draft_.instruments.begin() + selected);

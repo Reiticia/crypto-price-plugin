@@ -36,6 +36,7 @@ struct Settings
 
 std::wstring NormalizeSymbol(std::wstring value);
 bool IsValidSymbol(const std::wstring& value);
+std::wstring FormatInstrumentSymbol(const Instrument& instrument);
 const wchar_t* PriceTypeKey(PriceType type);
 PriceType PriceTypeFromKey(const std::wstring& value);
 
