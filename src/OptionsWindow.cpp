@@ -24,6 +24,7 @@ constexpr int kRefresh = 1007;
 constexpr int kShowChange = 1008;
 constexpr int kStatus = 1009;
 constexpr int kUpdate = 1010;
+constexpr int kDataSource = 1011;
 
 HWND AddControl(HWND parent, const wchar_t* className, const wchar_t* text,
                 DWORD style, int x, int y, int width, int height, int id)
@@ -66,7 +67,7 @@ bool OptionsWindow::Show(HWND parent, Settings& settings)
     OptionsWindow dialog(settings);
     if (!dialog.Create(parent))
     {
-        MessageBoxW(parent, L"无法创建选项窗口。", L"Bitget 行情", MB_OK | MB_ICONERROR);
+        MessageBoxW(parent, L"无法创建选项窗口。", L"Crypto 行情", MB_OK | MB_ICONERROR);
         return false;
     }
 
@@ -112,7 +113,7 @@ bool OptionsWindow::Create(HWND parent)
     if (!RegisterClassExW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         return false;
 
-    RECT rectangle{0, 0, 660, 440};
+    RECT rectangle{0, 0, 660, 480};
     AdjustWindowRectEx(&rectangle, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int x = CW_USEDEFAULT;
     int y = CW_USEDEFAULT;
@@ -123,7 +124,7 @@ bool OptionsWindow::Create(HWND parent)
         x = parentRect.left + ((parentRect.right - parentRect.left) - (rectangle.right - rectangle.left)) / 2;
         y = parentRect.top + ((parentRect.bottom - parentRect.top) - (rectangle.bottom - rectangle.top)) / 2;
     }
-    window_ = CreateWindowExW(WS_EX_DLGMODALFRAME, kWindowClass, L"Bitget 行情设置",
+    window_ = CreateWindowExW(WS_EX_DLGMODALFRAME, kWindowClass, L"Crypto 行情设置",
         WS_CAPTION | WS_SYSMENU, x, y, rectangle.right - rectangle.left,
         rectangle.bottom - rectangle.top, parent, nullptr, g_moduleInstance, this);
     return window_ != nullptr;
@@ -201,12 +202,12 @@ void OptionsWindow::CreateControls()
     AddControl(window_, L"BUTTON", L"删除选中项", WS_TABSTOP | BS_PUSHBUTTON,
                530, 301, 112, 27, kRemove);
 
-    AddControl(window_, L"STATIC", L"合约价格", 0, 18, 282, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"显示价格", 0, 18, 282, 65, 20, -1);
     priceType_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
                             88, 278, 162, 150, kPriceType);
-    SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"最新成交价"));
-    SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"标记价格"));
-    SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"指数价格"));
+    SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"最新价格"));
+    SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"标记价格（仅合约）"));
+    SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"指数价格（仅合约）"));
     SendMessageW(priceType_, CB_SETCURSEL, static_cast<WPARAM>(draft_.priceType), 0);
 
     AddControl(window_, L"STATIC", L"刷新间隔", 0, 270, 282, 65, 20, -1);
@@ -217,12 +218,20 @@ void OptionsWindow::CreateControls()
                              WS_TABSTOP | BS_AUTOCHECKBOX, 18, 318, 190, 24, kShowChange);
     SendMessageW(showChange_, BM_SETCHECK, draft_.showChange ? BST_CHECKED : BST_UNCHECKED, 0);
 
+    AddControl(window_, L"STATIC", L"数据源", 0, 270, 322, 65, 20, -1);
+    dataSource_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
+                             340, 318, 178, 120, kDataSource);
+    SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Bitget"));
+    SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"OKX"));
+    SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Binance"));
+    SendMessageW(dataSource_, CB_SETCURSEL, static_cast<WPARAM>(draft_.dataSource), 0);
+
     status_ = AddControl(window_, L"STATIC", L"输入如 BTCUSDT；BTC/USDT、BTC-USDT 会自动规范化。",
-                         0, 18, 354, 500, 22, kStatus);
+                         0, 18, 394, 610, 22, kStatus);
     AddControl(window_, L"BUTTON", L"确定", WS_TABSTOP | BS_DEFPUSHBUTTON,
-               454, 394, 88, 29, IDOK);
+               454, 434, 88, 29, IDOK);
     AddControl(window_, L"BUTTON", L"取消", WS_TABSTOP | BS_PUSHBUTTON,
-               554, 394, 88, 29, IDCANCEL);
+               554, 434, 88, 29, IDCANCEL);
     RefreshList(draft_.instruments.empty() ? -1 : 0);
 }
 
@@ -353,6 +362,9 @@ void OptionsWindow::Accept()
     draft_.refreshSeconds = static_cast<int>(seconds);
     const int price = static_cast<int>(SendMessageW(priceType_, CB_GETCURSEL, 0, 0));
     draft_.priceType = price == 1 ? PriceType::Mark : price == 2 ? PriceType::Index : PriceType::Last;
+    const int source = static_cast<int>(SendMessageW(dataSource_, CB_GETCURSEL, 0, 0));
+    draft_.dataSource = source == 1 ? DataSource::Okx :
+                        source == 2 ? DataSource::Binance : DataSource::Bitget;
     draft_.showChange = SendMessageW(showChange_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     accepted_ = true;
     DestroyWindow(window_);

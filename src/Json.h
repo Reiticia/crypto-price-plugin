@@ -18,4 +18,16 @@ struct Ticker
 bool ParseTickerResponse(const std::string& json,
                          std::unordered_map<std::string, Ticker>& tickers,
                          std::string& error);
+bool ParseOkxTickerResponse(const std::string& json,
+                            std::unordered_map<std::string, Ticker>& tickers,
+                            std::string& error);
+bool OverlayOkxPrices(const std::string& json, const std::string& field,
+                      bool markPrice, std::unordered_map<std::string, Ticker>& tickers,
+                      std::string& error);
+bool ParseBinanceTickerResponse(const std::string& json, bool coinMargined,
+                                std::unordered_map<std::string, Ticker>& tickers,
+                                std::string& error);
+bool OverlayBinancePremium(const std::string& json, bool coinMargined,
+                           std::unordered_map<std::string, Ticker>& tickers,
+                           std::string& error);
 } // namespace bitget

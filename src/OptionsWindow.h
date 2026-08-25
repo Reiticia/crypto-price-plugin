@@ -36,6 +36,7 @@ private:
     HWND symbol_{};
     HWND category_{};
     HWND priceType_{};
+    HWND dataSource_{};
     HWND refresh_{};
     HWND showChange_{};
     HWND status_{};

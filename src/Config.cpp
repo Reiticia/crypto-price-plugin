@@ -71,6 +71,33 @@ const wchar_t* PriceTypeKey(PriceType type)
     }
 }
 
+const wchar_t* DataSourceKey(DataSource source)
+{
+    switch (source)
+    {
+    case DataSource::Okx: return L"okx";
+    case DataSource::Binance: return L"binance";
+    default: return L"bitget";
+    }
+}
+
+const wchar_t* DataSourceName(DataSource source)
+{
+    switch (source)
+    {
+    case DataSource::Okx: return L"OKX";
+    case DataSource::Binance: return L"Binance";
+    default: return L"Bitget";
+    }
+}
+
+DataSource DataSourceFromKey(const std::wstring& value)
+{
+    if (value == L"okx") return DataSource::Okx;
+    if (value == L"binance") return DataSource::Binance;
+    return DataSource::Bitget;
+}
+
 PriceType PriceTypeFromKey(const std::wstring& value)
 {
     if (value == L"mark") return PriceType::Mark;
@@ -83,31 +110,40 @@ void ConfigStore::SetDirectory(const std::wstring& directory)
     path_ = directory;
     if (!path_.empty() && path_.back() != L'\\' && path_.back() != L'/')
         path_.push_back(L'\\');
-    path_ += L"BitgetPrice.ini";
+    legacyPath_ = path_ + L"BitgetPrice.ini";
+    path_ += L"CryptoPrice.ini";
 }
 
 Settings ConfigStore::Load() const
 {
     Settings settings;
-    if (path_.empty() || GetFileAttributesW(path_.c_str()) == INVALID_FILE_ATTRIBUTES)
+    if (path_.empty())
         return settings;
+    const std::wstring* loadPath = &path_;
+    if (GetFileAttributesW(path_.c_str()) == INVALID_FILE_ATTRIBUTES)
+    {
+        if (GetFileAttributesW(legacyPath_.c_str()) == INVALID_FILE_ATTRIBUTES)
+            return settings;
+        loadPath = &legacyPath_;
+    }
 
     settings.refreshSeconds = std::clamp(
-        static_cast<int>(GetPrivateProfileIntW(L"General", L"RefreshSeconds", 5, path_.c_str())),
+        static_cast<int>(GetPrivateProfileIntW(L"General", L"RefreshSeconds", 5, loadPath->c_str())),
         2, 300);
-    settings.showChange = GetPrivateProfileIntW(L"General", L"ShowChange", 1, path_.c_str()) != 0;
-    settings.priceType = PriceTypeFromKey(ReadString(path_, L"General", L"PriceType", L"last"));
+    settings.showChange = GetPrivateProfileIntW(L"General", L"ShowChange", 1, loadPath->c_str()) != 0;
+    settings.priceType = PriceTypeFromKey(ReadString(*loadPath, L"General", L"PriceType", L"last"));
+    settings.dataSource = DataSourceFromKey(ReadString(*loadPath, L"General", L"DataSource", L"bitget"));
 
     const int count = std::clamp(
-        static_cast<int>(GetPrivateProfileIntW(L"General", L"Count", 1, path_.c_str())),
+        static_cast<int>(GetPrivateProfileIntW(L"General", L"Count", 1, loadPath->c_str())),
         0, static_cast<int>(kMaxInstruments));
     settings.instruments.clear();
     for (int index = 0; index < count; ++index)
     {
         const std::wstring section = L"Instrument" + std::to_wstring(index);
         Instrument instrument;
-        instrument.category = ReadString(path_, section.c_str(), L"Category", L"USDT-FUTURES");
-        instrument.symbol = NormalizeSymbol(ReadString(path_, section.c_str(), L"Symbol", L""));
+        instrument.category = ReadString(*loadPath, section.c_str(), L"Category", L"USDT-FUTURES");
+        instrument.symbol = NormalizeSymbol(ReadString(*loadPath, section.c_str(), L"Symbol", L""));
         if ((instrument.category == L"SPOT" || instrument.category == L"USDT-FUTURES" ||
              instrument.category == L"USDC-FUTURES" || instrument.category == L"COIN-FUTURES") &&
             IsValidSymbol(instrument.symbol))
@@ -124,6 +160,7 @@ bool ConfigStore::Save(const Settings& settings) const
     };
 
     bool ok = true;
+    ok &= write(L"General", L"DataSource", DataSourceKey(settings.dataSource));
     ok &= write(L"General", L"RefreshSeconds", std::to_wstring(settings.refreshSeconds));
     ok &= write(L"General", L"ShowChange", settings.showChange ? L"1" : L"0");
     ok &= write(L"General", L"PriceType", PriceTypeKey(settings.priceType));

@@ -20,7 +20,7 @@ int wmain(int argumentCount, wchar_t** arguments)
 {
     if (argumentCount < 2 || argumentCount > 4)
     {
-        std::cerr << "Usage: BitgetPriceSmoke <plugin.dll> [config-dir] [--live]\n";
+        std::cerr << "Usage: CryptoPriceSmoke <plugin.dll> [config-dir] [--live|--no-change]\n";
         return 2;
     }
     HMODULE module = LoadLibraryW(arguments[1]);
@@ -35,6 +35,7 @@ int wmain(int argumentCount, wchar_t** arguments)
     bool valid = plugin && plugin->GetAPIVersion() == 7 && plugin->GetItem(0) &&
                  plugin->GetItem(0)->GetItemId() && plugin->GetInfo(ITMPlugin::TMI_NAME);
     bool live = false;
+    bool expectNoChange = false;
     for (int index = 2; valid && index < argumentCount; ++index)
     {
         if (std::wstring(arguments[index]) == L"--live")
@@ -42,11 +43,30 @@ int wmain(int argumentCount, wchar_t** arguments)
             live = true;
             continue;
         }
+        if (std::wstring(arguments[index]) == L"--no-change")
+        {
+            expectNoChange = true;
+            continue;
+        }
         plugin->OnExtenedInfo(ITMPlugin::EI_CONFIG_DIR, arguments[index]);
         const std::wstring aggregate = plugin->GetItem(0)->GetItemValueText();
         valid = plugin->GetItem(1) && plugin->GetItem(2) && !plugin->GetItem(3) &&
                 aggregate.find(L"BTCUSDT") != std::wstring::npos &&
                 aggregate.find(L"ETH/USDT") != std::wstring::npos;
+    }
+    if (valid && plugin->GetItem(1))
+    {
+        for (int index = 0; index < 3; ++index)
+        {
+            const std::wstring sample = plugin->GetItem(index)->GetItemValueSampleText();
+            const bool reservesChangeWidth = sample.find(L'%') != std::wstring::npos;
+            if (reservesChangeWidth == expectNoChange)
+            {
+                std::wcerr << L"24-hour change sample width does not match configuration\n";
+                valid = false;
+                break;
+            }
+        }
     }
     if (valid)
         std::wcout << L"Loaded: " << plugin->GetInfo(ITMPlugin::TMI_NAME) << L" (API "

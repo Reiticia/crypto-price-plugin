@@ -8,6 +8,13 @@ namespace bitget
 {
 constexpr std::size_t kMaxInstruments = 16;
 
+enum class DataSource
+{
+    Bitget,
+    Okx,
+    Binance,
+};
+
 enum class PriceType
 {
     Last,
@@ -29,6 +36,7 @@ struct Instrument
 struct Settings
 {
     std::vector<Instrument> instruments{{L"USDT-FUTURES", L"BTCUSDT"}};
+    DataSource dataSource{DataSource::Bitget};
     int refreshSeconds{5};
     PriceType priceType{PriceType::Last};
     bool showChange{true};
@@ -37,6 +45,9 @@ struct Settings
 std::wstring NormalizeSymbol(std::wstring value);
 bool IsValidSymbol(const std::wstring& value);
 std::wstring FormatInstrumentSymbol(const Instrument& instrument);
+const wchar_t* DataSourceKey(DataSource source);
+const wchar_t* DataSourceName(DataSource source);
+DataSource DataSourceFromKey(const std::wstring& value);
 const wchar_t* PriceTypeKey(PriceType type);
 PriceType PriceTypeFromKey(const std::wstring& value);
 
@@ -50,5 +61,6 @@ public:
 
 private:
     std::wstring path_;
+    std::wstring legacyPath_;
 };
 } // namespace bitget

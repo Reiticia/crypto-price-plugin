@@ -98,7 +98,7 @@ private:
     std::atomic<bool> shuttingDown_{false};
     std::atomic<unsigned long long> generation_{1};
     std::chrono::steady_clock::time_point nextRefresh_{};
-    std::wstring tooltip_{L"Bitget 行情：等待数据"};
+    std::wstring tooltip_{L"Crypto 行情：等待数据"};
 };
 } // namespace bitget
 

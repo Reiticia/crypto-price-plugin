@@ -2,113 +2,147 @@
 
 ## 1. 项目概述
 
-BitgetPrice 是一个面向 TrafficMonitor 的 Windows C++ 插件，用于显示 Bitget UTA 现货与合约行情。当前版本为 1.2.0。
+CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，当前版本为 2.0.0。它通过统一模型接入 Bitget、OKX 和 Binance 的公共现货与合约行情。
 
-主要能力：
+核心约束：
 
-- 最多配置 16 个现货或合约标的；
-- 支持 `SPOT`、`USDT-FUTURES`、`USDC-FUTURES` 和 `COIN-FUTURES`；
-- 合约支持最新成交价、标记价格和指数价格，现货固定显示最新成交价；
-- 合约显示为 `BTCUSDT`，现货显示为 `BTC/USDT`；
-- 价格和 24 小时涨跌幅统一保留两位小数；
-- 第一个显示项汇总全部标的，后续显示项分别对应单个标的；
-- 后台请求行情，不阻塞 TrafficMonitor 绘制线程。
+- 最多配置 16 个标的；
+- 数据源为全局设置，切换后所有标的使用同一家交易所；
+- “显示价格”选项全局作用于所有合约，可选择最新价格、标记价格或指数价格；现货只显示最新成交价；
+- 合约支持最新价、标记价和指数价；
+- 网络请求必须在后台线程执行；
+- 保留旧显示项 ID 和旧 INI 读取能力。
 
 ## 2. 开发环境
 
 - Windows 10 或更高版本；
-- Visual Studio 2022，“使用 C++ 的桌面开发”工作负载；
+- Visual Studio 2022 C++ 桌面开发工作负载；
 - Windows 10/11 SDK；
 - CMake 3.20 或更高版本；
 - C++17。
 
-插件仅使用系统库：WinHTTP、User32、GDI32 和 Comctl32，不依赖 MFC 或第三方 JSON 库。
+运行时只依赖 WinHTTP、User32、GDI32 和 Comctl32，不使用 MFC 或第三方 JSON 库。
 
 ## 3. 目录结构
 
 | 路径 | 职责 |
 | --- | --- |
-| `src/PluginInterface.h` | TrafficMonitor 官方插件 API v7 ABI |
-| `src/BitgetPricePlugin.*` | 插件入口、显示项、刷新调度和行情格式化 |
-| `src/BitgetClient.*` | WinHTTP 请求及字符编码转换 |
-| `src/Json.*` | Bitget ticker 响应解析 |
-| `src/Config.*` | 设置模型、交易对规范化及 INI 持久化 |
-| `src/OptionsWindow.*` | 纯 Win32 配置窗口 |
-| `src/dllmain.cpp` | DLL 入口和模块句柄 |
-| `tests/Tests.cpp` | 配置与 JSON 解析单元测试 |
-| `tests/PluginSmoke.cpp` | DLL ABI、多显示项及实时行情烟雾测试 |
-| `tests/fixtures/BitgetPrice.ini` | 一个合约加一个现货的混合测试配置 |
+| `src/PluginInterface.h` | TrafficMonitor API v7 ABI |
+| `src/BitgetPricePlugin.*` | 插件入口、显示项、后台调度和格式化；文件名为兼容历史保留 |
+| `src/MarketClient.*` | 通用 HTTP 客户端及三家交易所适配 |
+| `src/Json.*` | Bitget、OKX、Binance 响应解析和符号规范化 |
+| `src/Config.*` | 数据源、标的、价格类型及 INI 持久化 |
+| `src/OptionsWindow.*` | 纯 Win32 设置窗口 |
+| `tests/Tests.cpp` | 三家响应解析和配置单元测试 |
+| `tests/PluginSmoke.cpp` | DLL ABI、配置迁移和实时行情测试 |
+| `tests/fixtures*` | Bitget、OKX、Binance 和旧版配置样本 |
 
-## 4. 运行架构
+## 4. 运行流程
 
 ```text
 TrafficMonitor::DataRequired
         │
-        ├─ 应用上一轮后台请求结果
-        └─ 到达刷新时间后启动工作线程
+        ├─ 应用上一轮 pending 结果
+        └─ 到达刷新时间后复制当前 Settings
                     │
-                    ├─ 按市场类别分组
-                    ├─ 每种类别请求一次 Bitget UTA ticker
-                    ├─ 解析并匹配用户配置的 symbol
-                    └─ 写入 pending 结果
+                    └─ 后台线程按市场类别分组
                               │
-                              └─ 下一次 DataRequired 更新显示缓存
+                              └─ MarketClient
+                                  ├─ Bitget adapter
+                                  ├─ OKX adapter
+                                  └─ Binance adapter
+                                        │
+                                        └─ 统一 Ticker 缓存
 ```
 
-同一类别无论配置多少标的都只请求一次 `/api/v3/market/tickers`，随后在本地匹配交易对。这可以减少请求次数，并避免触碰 Bitget 的 IP 限频。
+设置变化时 generation 递增。旧设置启动的迟到响应会被丢弃，避免切换数据源后短暂显示上一家交易所的数据。
 
-### 显示项规则
+## 5. 统一数据模型
 
-- `GetItem(0)`：行情汇总项，ID 固定为 `BitgetContractPrice0`。保留该 ID 是为了让旧版本已启用的第一个任务栏项目在升级后自动变成汇总显示。
-- `GetItem(1..N)`：每个标的的独立显示项，ID 为 `BitgetContractPriceItem0..15`。
-- 没有配置标的时仍返回一个占位项，提示用户打开插件选项。
-- `GetItemValueText()` 只返回缓存文本，绝不能在此方法内请求网络。
+### DataSource
 
-## 5. TrafficMonitor 生命周期
+| 枚举 | INI 值 | 显示名 |
+| --- | --- | --- |
+| `Bitget` | `bitget` | Bitget |
+| `Okx` | `okx` | OKX |
+| `Binance` | `binance` | Binance |
 
-| 回调 | 项目中的处理 |
-| --- | --- |
-| `TMPluginGetInstance` | 返回进程内唯一插件实例 |
-| `OnInitialize` | 获取 TrafficMonitor 插件配置目录 |
-| `OnExtenedInfo(EI_CONFIG_DIR)` | 加载 `BitgetPrice.ini` 并触发刷新 |
-| `GetItem` | 返回汇总项或独立标的显示项 |
-| `DataRequired` | 应用缓存结果并按间隔调度后台刷新 |
-| `ShowOptionsDialog` | 打开多标的配置窗口并保存设置 |
-| `GetTooltipInfo` | 返回所有标的的完整行情或错误信息 |
-| `OnPluginCommand` | 执行“立即刷新 Bitget 行情”命令 |
+### 市场类别
 
-`PluginInterface.h` 的虚函数顺序决定 DLL ABI。升级官方接口时应整体同步官方头文件，不能只插入或删除某个虚函数。
+| 内部类别 | 含义 | 标准输入 |
+| --- | --- | --- |
+| `SPOT` | 现货 | `BTCUSDT` 或 `BTC/USDT` |
+| `USDT-FUTURES` | USDT 本位永续 | `BTCUSDT` |
+| `USDC-FUTURES` | USDC 本位永续 | `BTCUSDC` |
+| `COIN-FUTURES` | 币本位永续 | `BTCUSD` |
 
-## 6. Bitget API
+内部 symbol 会移除空格、`/`、`-`、`_` 并转成大写。展示时现货按计价币拆成 `BTC/USDT`，合约保持 `BTCUSDT`。
 
-请求：
+### Ticker
+
+统一字段：
+
+- `symbol`
+- `lastPrice`
+- `markPrice`
+- `indexPrice`
+- `price24hPcnt`，统一为小数比例，例如 `0.025` 表示 `2.5%`
+- `timestamp`
+
+Binance 返回的 `priceChangePercent` 是百分数，解析器会除以 100；OKX 使用 `last` 和 `open24h` 计算比例；Bitget 的 `price24hPcnt` 可以直接使用。
+
+## 6. 交易所适配
+
+### Bitget
 
 ```http
-GET https://api.bitget.com/api/v3/market/tickers?category=USDT-FUTURES
+GET https://api.bitget.com/api/v3/market/tickers?category={category}
 ```
 
-支持的 `category`：
+ticker 响应已同时包含最新价、标记价和指数价。
 
-| 配置值 | 含义 |
-| --- | --- |
-| `SPOT` | 现货 |
-| `USDT-FUTURES` | USDT 本位合约 |
-| `USDC-FUTURES` | USDC 本位合约 |
-| `COIN-FUTURES` | 币本位合约 |
+### OKX
 
-使用的响应字段为 `symbol`、`lastPrice`、`markPrice`、`indexPrice`、`price24hPcnt` 和 `ts`。现货响应没有 `markPrice` 和 `indexPrice`，因此无论全局价格类型如何设置，现货都使用 `lastPrice`。公共行情接口不需要 API Key。
+```http
+GET https://www.okx.com/api/v5/market/tickers?instType=SPOT|SWAP
+GET https://www.okx.com/api/v5/public/mark-price?instType=SWAP
+GET https://www.okx.com/api/v5/market/index-tickers?quoteCcy=USDT|USDC|USD
+```
 
-网络超时设置为连接、发送各 3 秒，接收 6 秒；单次响应上限为 16 MiB。请求失败时显示值为 `--`，详细原因写入 tooltip。
+OKX 的 `BTC-USDT-SWAP` 会规范化成 `BTCUSDT`。只有选择标记价或指数价时才请求对应的附加接口。
 
-## 7. 配置文件
+### Binance
 
-配置文件位于 TrafficMonitor 提供的插件配置目录，文件名为 `BitgetPrice.ini`：
+```http
+GET https://api.binance.com/api/v3/ticker/24hr?type=MINI
+GET https://fapi.binance.com/fapi/v1/ticker/24hr
+GET https://fapi.binance.com/fapi/v1/premiumIndex
+GET https://dapi.binance.com/dapi/v1/ticker/24hr
+GET https://dapi.binance.com/dapi/v1/premiumIndex
+```
+
+USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` 永续，例如 `BTCUSD_PERP` 规范化成 `BTCUSD`，日期交割合约不会混入。
+
+## 7. 显示项规则
+
+- `GetItem(0)` 是汇总项；其 ID 继续使用 `BitgetContractPrice0`，确保旧用户升级后无需重新勾选。
+- `GetItem(1..N)` 是各标的独立项；ID 继续使用 `BitgetContractPriceItem0..15`。
+- 汇总项标签会随数据源显示为 `Bitget:`、`OKX:` 或 `Binance:`。
+- `GetItemValueText()` 只返回缓存，不能访问网络。
+- 没有配置标的时仍返回占位项。
+
+内部类和显示项 ID 中保留 Bitget 字样属于兼容实现，不影响新产物名称和插件显示名。
+
+## 8. 配置文件与迁移
+
+新配置文件为 TrafficMonitor 插件配置目录下的 `CryptoPrice.ini`：
 
 ```ini
 [General]
+DataSource=okx
 RefreshSeconds=5
 ShowChange=1
-PriceType=last
+PriceType=mark
 Count=2
 
 [Instrument0]
@@ -122,14 +156,15 @@ Symbol=ETHUSDT
 
 规则：
 
+- `DataSource` 可为 `bitget`、`okx`、`binance`；
 - `RefreshSeconds` 范围为 2–300；
-- `PriceType` 可为 `last`、`mark` 或 `index`；
+- `PriceType` 可为 `last`、`mark`、`index`；
 - `Count` 范围为 0–16；
-- symbol 会转成大写，并移除空格、`/`、`-` 和 `_`；
-- INI 和 API 内部均保存 `BTCUSDT`；合约界面显示 `BTCUSDT`，现货界面按计价币拆分为 `BTC/USDT`；
-- 无配置文件时默认监控 `USDT-FUTURES/BTCUSDT`。
+- 现货忽略 `mark` 或 `index` 设置，始终使用最新价。
 
-## 8. 构建
+迁移逻辑：如果 `CryptoPrice.ini` 不存在但发现 `BitgetPrice.ini`，插件会读取旧配置并默认使用 Bitget。用户在选项窗口保存后会写入新的 `CryptoPrice.ini`。
+
+## 9. 构建
 
 x64：
 
@@ -145,25 +180,23 @@ cmake -S . -B build-win32 -A Win32
 cmake --build build-win32 --config Release
 ```
 
-输出分别位于：
+产物为 `CryptoPrice.dll`。插件 DLL 与 TrafficMonitor 必须使用相同架构。
 
-- `build-x64/Release/BitgetPrice.dll`
-- `build-win32/Release/BitgetPrice.dll`
-
-插件架构必须与 TrafficMonitor 主程序一致。
-
-## 9. 修改检查清单
+## 10. 修改检查清单
 
 - 不改变官方 API v7 虚表顺序；
-- 不在 `GetItem*` 或绘制回调中访问网络；
-- 后台线程结束前不能卸载 DLL；
-- 设置变化后递增 generation，丢弃旧配置对应的迟到响应；
-- 第一个显示项 ID 保持不变，以兼容已有 TrafficMonitor 设置；
-- 新字段同时补充 INI 读写、选项窗口和测试；
-- 修改后按《测试文档》完成离线和实时验证。
+- 不在显示项 getter 或绘制回调中请求网络；
+- 新数据源必须将 symbol、涨跌幅和价格字段转换为统一模型；
+- 现货不能读取标记价或指数价；
+- 币本位永续不能与日期交割合约混淆；
+- 切换数据源后必须丢弃旧 generation 响应；
+- 保持 `BitgetContractPrice*` ID 和旧配置迁移；
+- 新接口补充离线样本、真实行情测试和部署域名。
 
-## 10. 参考资料
+## 11. 参考资料
 
 - [TrafficMonitor 插件开发指南](https://github.com/zhongyang219/TrafficMonitor/wiki/%E6%8F%92%E4%BB%B6%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97)
-- [TrafficMonitor Stock 插件](https://github.com/zhongyang219/TrafficMonitorPlugins/tree/main/Plugins/Stock)
-- [Bitget UTA 获取行情数据](https://www.bitget.com/zh-CN/api-doc/uta/public/Tickers)
+- [Bitget UTA Tickers](https://www.bitget.com/zh-CN/api-doc/uta/public/Tickers)
+- [OKX Market Data](https://www.okx.com/docs-v5/en/#rest-api-market-data-get-tickers)
+- [Binance Spot Market Data](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints)
+- [Binance Futures Market Data](https://developers.binance.com/docs/derivatives/usds-margined-futures/market-data/rest-api)

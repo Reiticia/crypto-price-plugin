@@ -2,6 +2,7 @@
 #include "Json.h"
 
 #include <iostream>
+#include <cmath>
 #include <string>
 #include <unordered_map>
 
@@ -29,6 +30,11 @@ int main()
           "futures display symbol");
     Check(bitget::FormatInstrumentSymbol({L"SPOT", L"BTCUSDT"}) == L"BTC/USDT",
           "spot display symbol");
+    Check(bitget::DataSourceFromKey(L"okx") == bitget::DataSource::Okx, "parse OKX source");
+    Check(bitget::DataSourceFromKey(L"binance") == bitget::DataSource::Binance,
+          "parse Binance source");
+    Check(std::wstring(bitget::DataSourceKey(bitget::DataSource::Bitget)) == L"bitget",
+          "serialize Bitget source");
 
     const std::string response = R"({
         "code":"00000","msg":"success","data":[
@@ -49,6 +55,35 @@ int main()
     Check(!bitget::ParseTickerResponse(R"({"code":"40034","msg":"Parameter error","data":[]})",
                                        tickers, error), "reject API error");
     Check(error.find("40034") != std::string::npos, "report API error code");
+
+    const std::string okxResponse = R"({"code":"0","msg":"","data":[
+      {"instId":"BTC-USDT-SWAP","last":"80000.1","open24h":"79000","ts":"1"}
+    ]})";
+    Check(bitget::ParseOkxTickerResponse(okxResponse, tickers, error), "parse OKX ticker");
+    Check(tickers.count("BTCUSDT") == 1, "normalize OKX swap symbol");
+    Check(std::abs(std::stod(tickers["BTCUSDT"].price24hPcnt) -
+                   ((80000.1 - 79000.0) / 79000.0)) < 0.000001, "calculate OKX change");
+    Check(bitget::OverlayOkxPrices(
+        R"({"code":"0","data":[{"instId":"BTC-USDT-SWAP","markPx":"79999.9"}]})",
+        "markPx", true, tickers, error), "overlay OKX mark price");
+    Check(tickers["BTCUSDT"].markPrice == "79999.9", "read OKX mark price");
+
+    Check(bitget::ParseBinanceTickerResponse(
+        R"([{"symbol":"ETHUSDT","lastPrice":"3100.25","priceChangePercent":"2.5"}])",
+        false, tickers, error), "parse Binance ticker");
+    Check(std::abs(std::stod(tickers["ETHUSDT"].price24hPcnt) - 0.025) < 0.000001,
+          "convert Binance percentage to fraction");
+    Check(bitget::OverlayBinancePremium(
+        R"([{"symbol":"ETHUSDT","markPrice":"3100.1","indexPrice":"3100.2"}])",
+        false, tickers, error), "overlay Binance premium index");
+    Check(tickers["ETHUSDT"].indexPrice == "3100.2", "read Binance index price");
+
+    Check(bitget::ParseBinanceTickerResponse(
+        R"([{"symbol":"BTCUSD_PERP","lastPrice":"80001","priceChangePercent":"1.2"},
+             {"symbol":"BTCUSD_260925","lastPrice":"80002","priceChangePercent":"1.3"}])",
+        true, tickers, error), "parse Binance coin futures");
+    Check(tickers.size() == 1 && tickers.count("BTCUSD") == 1,
+          "keep Binance coin perpetual and normalize symbol");
 
     if (failures == 0) std::cout << "All tests passed\n";
     return failures == 0 ? 0 : 1;

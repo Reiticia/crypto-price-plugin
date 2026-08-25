@@ -2,27 +2,29 @@
 
 ## 1. 部署物
 
-生产部署只需要一个文件：
+生产环境只需要：
 
 ```text
-BitgetPrice.dll
+CryptoPrice.dll
 ```
 
-不要把测试程序、`.lib`、`.exp`、`.pdb` 或源码复制到 TrafficMonitor 的 `plugins` 目录。
+不要部署测试程序、`.lib`、`.exp`、`.pdb`、源码或整个构建目录。
 
-## 2. 部署前检查
+## 2. 网络要求
 
-- TrafficMonitor 已完全退出；
-- DLL 已按 Release 配置构建；
-- DLL 架构与 TrafficMonitor 一致；
-- 离线测试已通过；
-- 发布前至少执行一次真实行情测试；
-- 部署机器允许访问 `https://api.bitget.com:443`；
-- 插件不需要 API Key、Secret 或 Passphrase。
+根据要使用的数据源放行 HTTPS 443：
 
-可在任务管理器中确认 `TrafficMonitor.exe` 已退出。程序运行时直接覆盖 DLL 可能失败，或继续使用内存中的旧版本。
+| 数据源 | 域名 |
+| --- | --- |
+| Bitget | `api.bitget.com` |
+| OKX | `www.okx.com` |
+| Binance 现货 | `api.binance.com` |
+| Binance USDT/USDC 合约 | `fapi.binance.com` |
+| Binance 币本位合约 | `dapi.binance.com` |
 
-## 3. 生成 Release 包
+插件只访问公共行情接口，不需要配置 API Key、Secret 或 Passphrase。
+
+## 3. 发布构建
 
 x64：
 
@@ -40,106 +42,112 @@ cmake --build build-win32 --config Release
 ctest --test-dir build-win32 -C Release --output-on-failure
 ```
 
-建议发布文件命名：
+建议发布包命名：
 
 ```text
-BitgetPrice-1.2.0-x64.dll
-BitgetPrice-1.2.0-win32.dll
+CryptoPrice-2.0.0-x64.dll
+CryptoPrice-2.0.0-win32.dll
 ```
 
-安装时仍应重命名为 `BitgetPrice.dll`。
-
-建议同时记录 SHA-256：
+安装时文件名使用 `CryptoPrice.dll`。发布前记录哈希：
 
 ```powershell
-Get-FileHash .\build-x64\Release\BitgetPrice.dll -Algorithm SHA256
+Get-FileHash .\build-x64\Release\CryptoPrice.dll -Algorithm SHA256
 ```
 
 ## 4. 首次安装
 
 1. 完全退出 TrafficMonitor。
-2. 找到 TrafficMonitor 主程序所在目录。
-3. 如果不存在 `plugins` 文件夹，则创建它。
-4. 将对应架构的 `BitgetPrice.dll` 复制到 `plugins` 文件夹。
-5. 启动 TrafficMonitor。
-6. 打开“其他功能 → 插件管理”，确认“Bitget 行情”加载成功。
-7. 点击“选项”，添加所需现货或合约并保存。
-8. 在 TrafficMonitor 显示设置中启用“Bitget 行情汇总”；需要单独布局时，再启用各标的独立显示项。
+2. 确认 TrafficMonitor 架构，选择对应的 DLL。
+3. 将 `CryptoPrice.dll` 复制到 TrafficMonitor 的 `plugins` 文件夹。
+4. 启动 TrafficMonitor。
+5. 在“其他功能 → 插件管理”中确认“Crypto 行情”2.0.0 已加载。
+6. 打开选项，选择 Bitget、OKX 或 Binance。
+7. 添加现货或合约标的并保存。
+8. 在 TrafficMonitor 显示设置中启用汇总项或独立项。
 
-默认汇总显示格式示例：
-
-```text
-Bitget: BTCUSDT 77380.10 +0.26% | ETH/USDT 3210.25 -0.14%
-```
-
-## 5. 配置说明
-
-配置由 TrafficMonitor 决定存放目录，文件名固定为：
+汇总示例：
 
 ```text
-BitgetPrice.ini
+OKX: BTCUSDT 79800.10 +2.26% | ETH/USDT 3210.25 -0.14%
 ```
 
-插件升级不会主动删除或覆盖已有配置。建议部署前备份该文件。
+## 5. 从 BitgetPrice 1.x 升级
 
-配置窗口支持：
+产物从 `BitgetPrice.dll` 更名为 `CryptoPrice.dll`。升级步骤：
 
-- 添加、更新和删除标的；
-- 现货、USDT、USDC、币本位合约类别；
-- 最新价、标记价、指数价；
-- 是否显示 24 小时涨跌幅；
-- 2–300 秒刷新间隔。
-
-## 6. 从旧版本升级
-
-1. 备份 `BitgetPrice.ini` 和旧版 DLL。
+1. 备份旧 `BitgetPrice.dll` 和 `BitgetPrice.ini`。
 2. 完全退出 TrafficMonitor。
-3. 用新版 `BitgetPrice.dll` 覆盖旧文件。
-4. 重新启动 TrafficMonitor。
-5. 在插件管理中确认版本为 1.2.0。
-6. 检查已有合约配置是否保留，并确认新增现货显示为 `BTC/USDT`。
+3. 从 `plugins` 目录移除旧 `BitgetPrice.dll`。
+4. 复制新的 `CryptoPrice.dll`。
+5. 启动 TrafficMonitor，确认只加载一个行情插件。
+6. 新插件会在没有 `CryptoPrice.ini` 时读取旧 `BitgetPrice.ini`，数据源默认为 Bitget。
+7. 打开选项并保存一次，生成新的 `CryptoPrice.ini`。
 
-1.2.0 继续保留第一个显示项 ID `BitgetContractPrice0`，因此通常不需要重新勾选任务栏项目。各标的独立显示项按配置顺序提供，需要时可在显示设置中启用。
+不要同时保留两个 DLL，否则 TrafficMonitor 会同时加载旧版和新版，出现重复显示项和重复网络请求。
+
+显示项 ID `BitgetContractPrice0` 和 `BitgetContractPriceItem*` 被保留，因此原来的 TrafficMonitor 勾选状态通常可以继续使用。
+
+## 6. 配置文件
+
+新配置文件：
+
+```text
+CryptoPrice.ini
+```
+
+关键配置：
+
+```ini
+[General]
+DataSource=binance
+RefreshSeconds=5
+ShowChange=1
+PriceType=mark
+Count=2
+```
+
+`DataSource` 支持 `bitget`、`okx`、`binance`。插件升级不会主动删除旧 INI，确认新版本稳定后可自行归档 `BitgetPrice.ini`。
 
 ## 7. 部署后验证
 
-- 插件管理显示版本 1.2.0；
-- 任务栏汇总项直接显示所有现货与合约标的；
-- 合约使用 `BTCUSDT` 格式，现货使用 `BTC/USDT` 格式；
-- 价格均有两位小数；
-- hover 能看到最新价、标记价、指数价及错误详情；
-- “立即刷新 Bitget 行情”命令可用；
-- 重启 TrafficMonitor 后配置仍然有效；
-- 任务栏和 TrafficMonitor 主窗口无卡顿。
+- 插件管理显示“Crypto 行情”2.0.0；
+- 插件目录中不存在旧 `BitgetPrice.dll`；
+- 切换数据源后汇总标签同步变化；
+- 合约显示 `BTCUSDT`，现货显示 `BTC/USDT`；
+- 最新价、标记价、指数价符合所选设置；
+- 现货在选择标记价或指数价时仍显示最新价；
+- 所有价格保留两位小数；
+- 重启 TrafficMonitor 后配置仍有效；
+- 任务栏没有因网络请求出现卡顿。
 
 ## 8. 回滚
 
 1. 完全退出 TrafficMonitor。
-2. 将当前 DLL 移出 `plugins` 目录。
-3. 恢复备份的旧版 DLL。
-4. 如旧版本不兼容新配置，再恢复对应的 `BitgetPrice.ini` 备份。
-5. 启动 TrafficMonitor 并检查插件版本和显示项。
+2. 移除 `CryptoPrice.dll`。
+3. 恢复备份的 `BitgetPrice.dll`。
+4. 必要时恢复旧 `BitgetPrice.ini`。
+5. 启动 TrafficMonitor 并检查版本和行情。
 
-不要在 TrafficMonitor 运行时删除或替换 DLL。
+旧版不会读取 `CryptoPrice.ini`，所以回滚前不要删除旧配置备份。
 
 ## 9. 故障排查
 
 | 现象 | 原因和处理 |
 | --- | --- |
-| 插件管理中没有插件 | 检查 DLL 是否在 `plugins` 目录，以及 DLL/TrafficMonitor 架构是否一致 |
-| Windows 报错 193 | 使用了错误架构的 DLL |
-| 仍显示旧版插件名称或行为 | 确认 TrafficMonitor 已完全退出并替换了正确 DLL；插件版本应为 1.2.0 |
-| 汇总项未出现在任务栏 | 在 TrafficMonitor 显示设置中勾选“Bitget 行情汇总” |
-| 只看到汇总、不见独立项 | 独立项需要在显示设置中分别启用，这是预期行为 |
-| 行情显示 `--` | hover 查看错误；核对 symbol、category、网络和系统时间 |
-| 所有行情请求失败 | 检查代理、防火墙和 `api.bitget.com:443` |
-| 配置无法保存 | 检查 TrafficMonitor 插件配置目录的写权限 |
-| 显示内容太宽 | 减少汇总标的数量，或改用各标的独立项进行布局 |
+| 插件管理中没有插件 | 检查 DLL 路径及 x64/Win32 架构 |
+| Windows 错误 193 | DLL 与 TrafficMonitor 架构不一致 |
+| 出现两个行情插件 | 删除旧 `BitgetPrice.dll`，只保留 `CryptoPrice.dll` |
+| 切换数据源后仍显示旧标签 | 确认已点击“确定”，必要时重启 TrafficMonitor |
+| 所有行情为 `--` | hover 查看错误，检查对应域名、防火墙和代理 |
+| 只有 Binance 现货失败 | 当前网络或地区可能无法访问 `api.binance.com` |
+| 币本位标的找不到 | 使用 `BTCUSD`，插件会转换 `_PERP` 或 `-SWAP` |
+| 配置无法保存 | 检查 TrafficMonitor 插件配置目录写权限 |
+| 汇总太宽 | 减少汇总标的，或改用独立显示项布局 |
 
 ## 10. 安全与运维
 
-- 插件只访问 Bitget 公共行情接口；
-- 不读取账户信息，不执行交易；
-- 不应在配置文件中保存任何 Bitget 密钥；
-- 企业网络可仅放行 `api.bitget.com:443`；
-- 建议发布时保留版本号、架构、构建时间和 SHA-256 记录。
+- 不在 INI 中保存任何交易所密钥；
+- 企业网络可按数据源最小化放行域名；
+- 发布记录应包含版本、架构、构建时间和 SHA-256；
+- 生产升级前应运行三家离线解析测试和实际使用数据源的 live 测试。
