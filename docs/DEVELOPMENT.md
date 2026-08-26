@@ -171,6 +171,9 @@ Symbol=ETHUSDT
 
 ## 9. 构建
 
+默认构建链路为 `CMake → Visual Studio 2022 / MSBuild → MSVC CL.exe`。以下命令通过
+Visual Studio 生成器创建工程，再由 MSBuild 调用 MSVC 编译器；当前不使用 Clang。
+
 x64：
 
 ```powershell

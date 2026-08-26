@@ -37,6 +37,9 @@
 
 需要 Visual Studio 2022（含“使用 C++ 的桌面开发”工作负载）和 CMake 3.20 或更高版本。
 
+默认构建链路为 `CMake → Visual Studio 2022 / MSBuild → MSVC CL.exe`。CMake 负责生成
+Visual Studio 工程，实际 C++ 编译由 MSVC 完成；当前不使用 Clang。
+
 x64：
 
 ```powershell
