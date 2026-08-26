@@ -58,6 +58,16 @@ ctest --test-dir build-win32 -C Release --output-on-failure
 
 产物为 `build-x64/Release/CryptoPrice.dll` 或 `build-win32/Release/CryptoPrice.dll`。
 
+### GitHub Actions
+
+[构建工作流](.github/workflows/build.yml)同时支持发布构建和手动构建：
+
+- 推送 `vX.Y.Z` Tag 时，工作流会验证 Tag 与 `CMakeLists.txt` 版本一致，构建并测试
+  x64、Win32，从 `CHANGELOG.md` 提取对应版本章节作为 Release 说明，随后创建 GitHub
+  Release，附带两个 DLL 和 SHA-256 校验文件；
+- 在 Actions 页面手动运行时，只构建并测试 x64、Win32，不创建 Release。两个 DLL 作为
+  Workflow Artifacts 保留 14 天，可从该次运行页面下载。
+
 ## 安装和使用
 
 1. 完全退出 TrafficMonitor。

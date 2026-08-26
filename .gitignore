@@ -12,3 +12,8 @@
 *.lib
 *.obj
 *.pdb
+
+# Always track repository-owned GitHub Actions workflows.
+!/.github/
+!/.github/workflows/
+!/.github/workflows/*.yml
