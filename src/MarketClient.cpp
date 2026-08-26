@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace bitget
+namespace cryptoprice
 {
 namespace
 {
@@ -419,4 +419,4 @@ bool MarketClient::FetchBinance(const std::wstring& category, PriceType priceTyp
     error.clear();
     return true;
 }
-} // namespace bitget
+} // namespace cryptoprice

@@ -8,12 +8,12 @@
 
 int wmain()
 {
-    bitget::MarketClient client;
-    std::unordered_map<std::string, bitget::Ticker> tickers;
+    cryptoprice::MarketClient client;
+    std::unordered_map<std::string, cryptoprice::Ticker> tickers;
     std::wstring error;
     const auto started = std::chrono::steady_clock::now();
-    const bool ok = client.FetchCategory(bitget::DataSource::Okx, L"USDT-FUTURES",
-                                         bitget::PriceType::Mark, tickers, error);
+    const bool ok = client.FetchCategory(cryptoprice::DataSource::Okx, L"USDT-FUTURES",
+                                         cryptoprice::PriceType::Mark, tickers, error);
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started).count();
     const int utf8Size = WideCharToMultiByte(CP_UTF8, 0, error.data(),

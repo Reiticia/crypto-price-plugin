@@ -6,7 +6,7 @@
 
 #include <utility>
 
-namespace bitget
+namespace cryptoprice
 {
 class OptionsWindow
 {
@@ -42,4 +42,4 @@ private:
     HWND status_{};
     bool accepted_{};
 };
-} // namespace bitget
+} // namespace cryptoprice

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace bitget
+namespace cryptoprice
 {
 namespace
 {
@@ -409,4 +409,4 @@ bool OverlayBinancePremium(const std::string& json, bool coinMargined,
     error.clear();
     return true;
 }
-} // namespace bitget
+} // namespace cryptoprice

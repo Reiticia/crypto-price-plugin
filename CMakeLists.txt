@@ -8,7 +8,7 @@ endif()
 
 add_library(CryptoPrice SHARED
     src/MarketClient.cpp
-    src/BitgetPricePlugin.cpp
+    src/CryptoPricePlugin.cpp
     src/Config.cpp
     src/Json.cpp
     src/OptionsWindow.cpp
@@ -61,8 +61,6 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME CryptoPriceSmoke COMMAND CryptoPriceSmoke $<TARGET_FILE:CryptoPrice>
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures)
-    add_test(NAME CryptoPriceLegacyConfigSmoke COMMAND CryptoPriceSmoke $<TARGET_FILE:CryptoPrice>
-        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures-legacy)
     add_test(NAME CryptoPriceNoChangeWidthSmoke COMMAND CryptoPriceSmoke $<TARGET_FILE:CryptoPrice>
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures-no-change --no-change)
 endif()

@@ -9,11 +9,11 @@
 #include <cwchar>
 #include <string>
 
-namespace bitget
+namespace cryptoprice
 {
 namespace
 {
-constexpr wchar_t kWindowClass[] = L"TrafficMonitorBitgetPriceOptions";
+constexpr wchar_t kWindowClass[] = L"TrafficMonitorCryptoPriceOptions";
 constexpr int kList = 1001;
 constexpr int kSymbol = 1002;
 constexpr int kCategory = 1003;
@@ -374,4 +374,4 @@ void OptionsWindow::SetStatus(const wchar_t* text)
 {
     SetWindowTextW(status_, text);
 }
-} // namespace bitget
+} // namespace cryptoprice

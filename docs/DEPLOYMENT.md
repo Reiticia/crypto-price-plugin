@@ -72,21 +72,10 @@ Get-FileHash .\build-x64\Release\CryptoPrice.dll -Algorithm SHA256
 OKX: BTCUSDT 79800.10 +2.26% | ETH/USDT 3210.25 -0.14%
 ```
 
-## 5. 从 BitgetPrice 1.x 升级
+## 5. 显示项 ID
 
-产物从 `BitgetPrice.dll` 更名为 `CryptoPrice.dll`。升级步骤：
-
-1. 备份旧 `BitgetPrice.dll` 和 `BitgetPrice.ini`。
-2. 完全退出 TrafficMonitor。
-3. 从 `plugins` 目录移除旧 `BitgetPrice.dll`。
-4. 复制新的 `CryptoPrice.dll`。
-5. 启动 TrafficMonitor，确认只加载一个行情插件。
-6. 新插件会在没有 `CryptoPrice.ini` 时读取旧 `BitgetPrice.ini`，数据源默认为 Bitget。
-7. 打开选项并保存一次，生成新的 `CryptoPrice.ini`。
-
-不要同时保留两个 DLL，否则 TrafficMonitor 会同时加载旧版和新版，出现重复显示项和重复网络请求。
-
-显示项 ID `BitgetContractPrice0` 和 `BitgetContractPriceItem*` 被保留，因此原来的 TrafficMonitor 勾选状态通常可以继续使用。
+显示项 ID 为 `CryptoPrice0`（汇总项）和 `CryptoPriceItem0..15`（独立项）。TrafficMonitor
+在“显示设置”中按 ID 保存勾选状态；更换 ID 后需要重新勾选要显示的项。
 
 ## 6. 配置文件
 
@@ -107,12 +96,11 @@ PriceType=mark
 Count=2
 ```
 
-`DataSource` 支持 `bitget`、`okx`、`binance`。插件升级不会主动删除旧 INI，确认新版本稳定后可自行归档 `BitgetPrice.ini`。
+`DataSource` 支持 `bitget`、`okx`、`binance`。
 
 ## 7. 部署后验证
 
 - 插件管理显示“Crypto 行情”2.0.0；
-- 插件目录中不存在旧 `BitgetPrice.dll`；
 - 切换数据源后汇总标签同步变化；
 - 合约显示 `BTCUSDT`，现货显示 `BTC/USDT`；
 - 最新价、标记价、指数价符合所选设置；
@@ -125,11 +113,8 @@ Count=2
 
 1. 完全退出 TrafficMonitor。
 2. 移除 `CryptoPrice.dll`。
-3. 恢复备份的 `BitgetPrice.dll`。
-4. 必要时恢复旧 `BitgetPrice.ini`。
-5. 启动 TrafficMonitor 并检查版本和行情。
-
-旧版不会读取 `CryptoPrice.ini`，所以回滚前不要删除旧配置备份。
+3. 恢复备份的旧版 `CryptoPrice.dll`。
+4. 启动 TrafficMonitor 并检查版本和行情。
 
 ## 9. 故障排查
 
@@ -137,7 +122,6 @@ Count=2
 | --- | --- |
 | 插件管理中没有插件 | 检查 DLL 路径及 x64/Win32 架构 |
 | Windows 错误 193 | DLL 与 TrafficMonitor 架构不一致 |
-| 出现两个行情插件 | 删除旧 `BitgetPrice.dll`，只保留 `CryptoPrice.dll` |
 | 切换数据源后仍显示旧标签 | 确认已点击“确定”，必要时重启 TrafficMonitor |
 | 所有行情为 `--` | hover 查看错误，检查对应域名、防火墙和代理 |
 | OKX 出现 Windows 错误 12007 | DNS 无法解析 OKX 入口；插件依次尝试 `eea.okx.com`、`www.okx.com`、本地代理（Clash/v2rayN 常用端口）和 DoH 解析真实 IP 直连，仍失败时检查 DNS、代理和两个域名 |

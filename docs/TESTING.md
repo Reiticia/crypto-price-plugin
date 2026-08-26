@@ -8,7 +8,7 @@
 - OKX 和 Binance 特殊 symbol 规范化；
 - 三家涨跌幅统一成小数比例；
 - 合约标记价、指数价和现货最新价；
-- 数据源配置保存与旧 `BitgetPrice.ini` 迁移；
+- 数据源配置保存与读取；
 - DLL 导出入口、API v7 和多标的显示项；
 - 隐藏 24 小时涨跌幅后不再为百分比预留任务栏宽度；
 - 新产物名称 `CryptoPrice.dll`。
@@ -19,7 +19,6 @@
 | --- | --- | --- |
 | `CryptoPriceTests` | 否 | 配置、显示格式及三家 JSON 解析 |
 | `CryptoPriceSmoke` | 否 | DLL、API v7、混合现货/合约显示项 |
-| `CryptoPriceLegacyConfigSmoke` | 否 | 从旧 `BitgetPrice.ini` 加载配置 |
 | `CryptoPriceNoChangeWidthSmoke` | 否 | 隐藏涨跌幅时汇总项和独立项的宽度示例不含百分比 |
 | `CryptoPriceSmoke --live` | 是 | 指定数据源的真实合约和现货行情 |
 
@@ -72,14 +71,6 @@ ctest --test-dir build-win32 -C Release --output-on-failure
 - 汇总项包含 `BTCUSDT` 和 `ETH/USDT`；
 - 两个独立显示项存在；
 - 插件可以安全卸载。
-
-旧配置迁移：
-
-```powershell
-.\build-x64\Release\CryptoPriceSmoke.exe `
-  .\build-x64\Release\CryptoPrice.dll `
-  .\tests\fixtures-legacy
-```
 
 隐藏涨跌幅后的宽度回归：
 
@@ -150,16 +141,14 @@ TMPluginGetInstance
 
 ## 8. TrafficMonitor 手工验收
 
-1. 确认旧 `BitgetPrice.dll` 已移出插件目录。
-2. 安装 `CryptoPrice.dll`，插件管理应显示“Crypto 行情”2.0.0。
-3. 配置 BTCUSDT 合约和 BTC/USDT 现货。
-4. 依次切换 Bitget、OKX、Binance，保存后确认任务栏标签随数据源变化。
-5. 确认合约显示 `BTCUSDT`，现货显示 `BTC/USDT`。
-6. 切换最新价、标记价、指数价；现货必须始终有值。
-7. 确认汇总项和独立项都能显示。
-8. 重启 TrafficMonitor，确认数据源和标的配置被保留。
-9. 使用旧版 `BitgetPrice.ini` 启动，确认默认迁移为 Bitget。
-10. 断网后确认显示 `--`，tooltip 中包含交易所和网络错误。
+1. 安装 `CryptoPrice.dll`，插件管理应显示“Crypto 行情”2.0.0。
+2. 配置 BTCUSDT 合约和 BTC/USDT 现货。
+3. 依次切换 Bitget、OKX、Binance，保存后确认任务栏标签随数据源变化。
+4. 确认合约显示 `BTCUSDT`，现货显示 `BTC/USDT`。
+5. 切换最新价、标记价、指数价；现货必须始终有值。
+6. 确认汇总项和独立项都能显示。
+7. 重启 TrafficMonitor，确认数据源和标的配置被保留。
+8. 断网后确认显示 `--`，tooltip 中包含交易所和网络错误。
 
 ## 9. 建议回归场景
 

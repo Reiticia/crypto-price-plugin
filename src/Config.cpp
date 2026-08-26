@@ -7,7 +7,7 @@
 #include <cwctype>
 #include <string_view>
 
-namespace bitget
+namespace cryptoprice
 {
 namespace
 {
@@ -110,7 +110,6 @@ void ConfigStore::SetDirectory(const std::wstring& directory)
     path_ = directory;
     if (!path_.empty() && path_.back() != L'\\' && path_.back() != L'/')
         path_.push_back(L'\\');
-    legacyPath_ = path_ + L"BitgetPrice.ini";
     path_ += L"CryptoPrice.ini";
 }
 
@@ -121,11 +120,7 @@ Settings ConfigStore::Load() const
         return settings;
     const std::wstring* loadPath = &path_;
     if (GetFileAttributesW(path_.c_str()) == INVALID_FILE_ATTRIBUTES)
-    {
-        if (GetFileAttributesW(legacyPath_.c_str()) == INVALID_FILE_ATTRIBUTES)
-            return settings;
-        loadPath = &legacyPath_;
-    }
+        return settings;
 
     settings.refreshSeconds = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"General", L"RefreshSeconds", 5, loadPath->c_str())),
@@ -174,4 +169,4 @@ bool ConfigStore::Save(const Settings& settings) const
     }
     return ok;
 }
-} // namespace bitget
+} // namespace cryptoprice

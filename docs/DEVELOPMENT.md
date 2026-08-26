@@ -28,14 +28,14 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 | 路径 | 职责 |
 | --- | --- |
 | `src/PluginInterface.h` | TrafficMonitor API v7 ABI |
-| `src/BitgetPricePlugin.*` | 插件入口、显示项、后台调度和格式化；文件名为兼容历史保留 |
+| `src/CryptoPricePlugin.*` | 插件入口、显示项、后台调度和格式化 |
 | `src/MarketClient.*` | 通用 HTTP 客户端及三家交易所适配 |
 | `src/Json.*` | Bitget、OKX、Binance 响应解析和符号规范化 |
 | `src/Config.*` | 数据源、标的、价格类型及 INI 持久化 |
 | `src/OptionsWindow.*` | 纯 Win32 设置窗口 |
 | `tests/Tests.cpp` | 三家响应解析和配置单元测试 |
-| `tests/PluginSmoke.cpp` | DLL ABI、配置迁移和实时行情测试 |
-| `tests/fixtures*` | Bitget、OKX、Binance 和旧版配置样本 |
+| `tests/PluginSmoke.cpp` | DLL ABI 和实时行情测试 |
+| `tests/fixtures*` | Bitget、OKX、Binance 配置样本 |
 
 ## 4. 运行流程
 
@@ -134,15 +134,13 @@ USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` �
 
 ## 7. 显示项规则
 
-- `GetItem(0)` 是汇总项；其 ID 继续使用 `BitgetContractPrice0`，确保旧用户升级后无需重新勾选。
-- `GetItem(1..N)` 是各标的独立项；ID 继续使用 `BitgetContractPriceItem0..15`。
+- `GetItem(0)` 是汇总项，ID 为 `CryptoPrice0`。
+- `GetItem(1..N)` 是各标的独立项，ID 为 `CryptoPriceItem0..15`。
 - 汇总项标签会随数据源显示为 `Bitget:`、`OKX:` 或 `Binance:`。
 - `GetItemValueText()` 只返回缓存，不能访问网络。
 - 没有配置标的时仍返回占位项。
 
-内部类和显示项 ID 中保留 Bitget 字样属于兼容实现，不影响新产物名称和插件显示名。
-
-## 8. 配置文件与迁移
+## 8. 配置文件
 
 新配置文件为 TrafficMonitor 插件配置目录下的 `CryptoPrice.ini`：
 
@@ -171,8 +169,6 @@ Symbol=ETHUSDT
 - `Count` 范围为 0–16；
 - 现货忽略 `mark` 或 `index` 设置，始终使用最新价。
 
-迁移逻辑：如果 `CryptoPrice.ini` 不存在但发现 `BitgetPrice.ini`，插件会读取旧配置并默认使用 Bitget。用户在选项窗口保存后会写入新的 `CryptoPrice.ini`。
-
 ## 9. 构建
 
 x64：
@@ -199,7 +195,6 @@ cmake --build build-win32 --config Release
 - 现货不能读取标记价或指数价；
 - 币本位永续不能与日期交割合约混淆；
 - 切换数据源后必须丢弃旧 generation 响应；
-- 保持 `BitgetContractPrice*` ID 和旧配置迁移；
 - 新接口补充离线样本、真实行情测试和部署域名。
 
 ## 11. 参考资料

@@ -11,6 +11,10 @@
 - 优先使用系统代理，并尝试常见本地代理端口（Clash / v2rayN 等）作为兜底
 - 新增 `MarketClientProbe`、`MultiSourceProbe` 命令行探针工具
 
+### 变更
+
+- 源码文件和内部命名统一为 `CryptoPrice`，移除旧配置兼容
+
 ## [2.0.0] - 2026-08-25
 
 ### 新增
@@ -24,7 +28,7 @@
 
 ### 变更
 
-- 插件由 BitgetPrice 更名 CryptoPrice
+- 插件统一更名为 CryptoPrice
 
 ## [1.2.0] - 2026-08-24
 
@@ -36,4 +40,4 @@
 
 ### 新增
 
-- 首个版本：TrafficMonitor 插件，显示 Bitget 合约价格与 24 小时涨跌幅
+- 首个版本：TrafficMonitor 插件，显示合约价格与 24 小时涨跌幅

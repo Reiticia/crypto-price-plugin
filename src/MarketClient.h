@@ -6,7 +6,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace bitget
+namespace cryptoprice
 {
 class MarketClient
 {
@@ -29,4 +29,4 @@ private:
 
 std::wstring Utf8ToWide(const std::string& value);
 std::string WideToAscii(const std::wstring& value);
-} // namespace bitget
+} // namespace cryptoprice

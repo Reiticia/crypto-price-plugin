@@ -1,4 +1,4 @@
-#include "BitgetPricePlugin.h"
+#include "CryptoPricePlugin.h"
 
 #include "MarketClient.h"
 #include "OptionsWindow.h"
@@ -14,7 +14,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace bitget
+namespace cryptoprice
 {
 namespace
 {
@@ -62,18 +62,18 @@ std::wstring FormatChange(const std::string& raw)
 
 PriceItem::PriceItem(std::size_t index)
     : name_(L"Crypto 行情 " + std::to_wstring(index + 1)),
-      id_(L"BitgetContractPrice" + std::to_wstring(index)),
+      id_(L"CryptoPrice" + std::to_wstring(index)),
       label_(L"Crypto: "), value_(L"--")
 {
 }
 
-BitgetPricePlugin& BitgetPricePlugin::Instance()
+CryptoPricePlugin& CryptoPricePlugin::Instance()
 {
-    static BitgetPricePlugin instance;
+    static CryptoPricePlugin instance;
     return instance;
 }
 
-BitgetPricePlugin::BitgetPricePlugin()
+CryptoPricePlugin::CryptoPricePlugin()
     : items_{PriceItem(0), PriceItem(1), PriceItem(2), PriceItem(3),
              PriceItem(4), PriceItem(5), PriceItem(6), PriceItem(7),
              PriceItem(8), PriceItem(9), PriceItem(10), PriceItem(11),
@@ -81,19 +81,19 @@ BitgetPricePlugin::BitgetPricePlugin()
              PriceItem(16)}
 {
     // 保留旧版第一个显示项的 ID，使升级后原来已勾选的任务栏项目自动变为汇总项。
-    items_[0].id_ = L"BitgetContractPrice0";
+    items_[0].id_ = L"CryptoPrice0";
     for (std::size_t index = 0; index < kMaxInstruments; ++index)
-        items_[index + 1].id_ = L"BitgetContractPriceItem" + std::to_wstring(index);
+        items_[index + 1].id_ = L"CryptoPriceItem" + std::to_wstring(index);
     UpdatePlaceholder();
 }
 
-BitgetPricePlugin::~BitgetPricePlugin()
+CryptoPricePlugin::~CryptoPricePlugin()
 {
     shuttingDown_ = true;
     if (worker_.joinable()) worker_.join();
 }
 
-IPluginItem* BitgetPricePlugin::GetItem(int index)
+IPluginItem* CryptoPricePlugin::GetItem(int index)
 {
     if (index < 0) return nullptr;
     std::lock_guard<std::mutex> lock(settingsMutex_);
@@ -103,13 +103,13 @@ IPluginItem* BitgetPricePlugin::GetItem(int index)
     return &items_[static_cast<std::size_t>(index)];
 }
 
-void BitgetPricePlugin::DataRequired()
+void CryptoPricePlugin::DataRequired()
 {
     ApplyPendingResult();
     StartRefresh(false);
 }
 
-ITMPlugin::OptionReturn BitgetPricePlugin::ShowOptionsDialog(void* parent)
+ITMPlugin::OptionReturn CryptoPricePlugin::ShowOptionsDialog(void* parent)
 {
     Settings draft;
     {
@@ -128,7 +128,7 @@ ITMPlugin::OptionReturn BitgetPricePlugin::ShowOptionsDialog(void* parent)
     return OR_OPTION_CHANGED;
 }
 
-const wchar_t* BitgetPricePlugin::GetInfo(PluginInfoIndex index)
+const wchar_t* CryptoPricePlugin::GetInfo(PluginInfoIndex index)
 {
     switch (index)
     {
@@ -142,12 +142,12 @@ const wchar_t* BitgetPricePlugin::GetInfo(PluginInfoIndex index)
     }
 }
 
-const wchar_t* BitgetPricePlugin::GetTooltipInfo()
+const wchar_t* CryptoPricePlugin::GetTooltipInfo()
 {
     return tooltip_.c_str();
 }
 
-void BitgetPricePlugin::OnExtenedInfo(ExtendedInfoIndex index, const wchar_t* data)
+void CryptoPricePlugin::OnExtenedInfo(ExtendedInfoIndex index, const wchar_t* data)
 {
     if (index != EI_CONFIG_DIR || !data) return;
     config_.SetDirectory(data);
@@ -155,7 +155,7 @@ void BitgetPricePlugin::OnExtenedInfo(ExtendedInfoIndex index, const wchar_t* da
     StartRefresh(true);
 }
 
-void BitgetPricePlugin::OnInitialize(ITrafficMonitor* application)
+void CryptoPricePlugin::OnInitialize(ITrafficMonitor* application)
 {
     if (!application) return;
     const wchar_t* directory = application->GetPluginConfigDir();
@@ -166,17 +166,17 @@ void BitgetPricePlugin::OnInitialize(ITrafficMonitor* application)
     }
 }
 
-const wchar_t* BitgetPricePlugin::GetCommandName(int commandIndex)
+const wchar_t* CryptoPricePlugin::GetCommandName(int commandIndex)
 {
     return commandIndex == 0 ? L"立即刷新 Crypto 行情" : nullptr;
 }
 
-void BitgetPricePlugin::OnPluginCommand(int commandIndex, void*, void*)
+void CryptoPricePlugin::OnPluginCommand(int commandIndex, void*, void*)
 {
     if (commandIndex == 0) StartRefresh(true);
 }
 
-void BitgetPricePlugin::ApplySettings(Settings settings)
+void CryptoPricePlugin::ApplySettings(Settings settings)
 {
     if (settings.instruments.size() > kMaxInstruments)
         settings.instruments.resize(kMaxInstruments);
@@ -207,7 +207,7 @@ void BitgetPricePlugin::ApplySettings(Settings settings)
     }
 }
 
-void BitgetPricePlugin::ApplyPendingResult()
+void CryptoPricePlugin::ApplyPendingResult()
 {
     PendingResult result;
     {
@@ -226,7 +226,7 @@ void BitgetPricePlugin::ApplyPendingResult()
     RebuildTooltip(settings_.instruments.size());
 }
 
-void BitgetPricePlugin::StartRefresh(bool force)
+void CryptoPricePlugin::StartRefresh(bool force)
 {
     std::lock_guard<std::mutex> refreshLock(refreshMutex_);
     if (shuttingDown_) return;
@@ -244,10 +244,10 @@ void BitgetPricePlugin::StartRefresh(bool force)
     nextRefresh_ = now + std::chrono::seconds(snapshot.refreshSeconds);
     const unsigned long long generation = generation_.load();
     workerRunning_ = true;
-    worker_ = std::thread(&BitgetPricePlugin::RefreshWorker, this, std::move(snapshot), generation);
+    worker_ = std::thread(&CryptoPricePlugin::RefreshWorker, this, std::move(snapshot), generation);
 }
 
-void BitgetPricePlugin::RefreshWorker(Settings settings, unsigned long long generation)
+void CryptoPricePlugin::RefreshWorker(Settings settings, unsigned long long generation)
 {
     std::map<std::wstring, std::vector<std::size_t>> groups;
     for (std::size_t index = 0; index < settings.instruments.size(); ++index)
@@ -291,7 +291,7 @@ void BitgetPricePlugin::RefreshWorker(Settings settings, unsigned long long gene
     workerRunning_ = false;
 }
 
-void BitgetPricePlugin::UpdatePlaceholder()
+void CryptoPricePlugin::UpdatePlaceholder()
 {
     if (!settings_.instruments.empty()) return;
     items_[0].name_ = L"Crypto 行情（未配置）";
@@ -301,7 +301,7 @@ void BitgetPricePlugin::UpdatePlaceholder()
     items_[0].detail_ = L"请在插件管理中打开“选项”添加标的";
 }
 
-void BitgetPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
+void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
                                    const Settings& settings)
 {
     PriceItem& item = items_[index + 1];
@@ -322,7 +322,7 @@ void BitgetPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
                         L" | 指数 " + FormatPrice(result.ticker.indexPrice);
 }
 
-void BitgetPricePlugin::RebuildAggregate()
+void CryptoPricePlugin::RebuildAggregate()
 {
     if (settings_.instruments.empty()) return;
 
@@ -345,7 +345,7 @@ void BitgetPricePlugin::RebuildAggregate()
     }
 }
 
-void BitgetPricePlugin::RebuildTooltip(std::size_t itemCount)
+void CryptoPricePlugin::RebuildTooltip(std::size_t itemCount)
 {
     tooltip_ = std::wstring(DataSourceName(settings_.dataSource)) + L" 行情";
     if (itemCount == 0)
@@ -360,9 +360,9 @@ void BitgetPricePlugin::RebuildTooltip(std::size_t itemCount)
         if (!item.detail_.empty()) tooltip_ += L"（" + item.detail_ + L"）";
     }
 }
-} // namespace bitget
+} // namespace cryptoprice
 
 ITMPlugin* TMPluginGetInstance()
 {
-    return &bitget::BitgetPricePlugin::Instance();
+    return &cryptoprice::CryptoPricePlugin::Instance();
 }

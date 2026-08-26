@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace bitget
+namespace cryptoprice
 {
 constexpr std::size_t kMaxInstruments = 16;
 
@@ -61,6 +61,5 @@ public:
 
 private:
     std::wstring path_;
-    std::wstring legacyPath_;
 };
-} // namespace bitget
+} // namespace cryptoprice

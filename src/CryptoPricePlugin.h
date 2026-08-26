@@ -13,9 +13,9 @@
 #include <thread>
 #include <vector>
 
-namespace bitget
+namespace cryptoprice
 {
-class BitgetPricePlugin;
+class CryptoPricePlugin;
 
 class PriceItem final : public IPluginItem
 {
@@ -29,7 +29,7 @@ public:
     const wchar_t* GetItemValueSampleText() const override { return sample_.c_str(); }
 
 private:
-    friend class BitgetPricePlugin;
+    friend class CryptoPricePlugin;
     std::wstring name_;
     std::wstring id_;
     std::wstring label_;
@@ -38,11 +38,11 @@ private:
     std::wstring detail_;
 };
 
-class BitgetPricePlugin final : public ITMPlugin
+class CryptoPricePlugin final : public ITMPlugin
 {
 public:
-    static BitgetPricePlugin& Instance();
-    ~BitgetPricePlugin();
+    static CryptoPricePlugin& Instance();
+    ~CryptoPricePlugin();
 
     IPluginItem* GetItem(int index) override;
     void DataRequired() override;
@@ -69,9 +69,9 @@ private:
         std::vector<QuoteResult> quotes;
     };
 
-    BitgetPricePlugin();
-    BitgetPricePlugin(const BitgetPricePlugin&) = delete;
-    BitgetPricePlugin& operator=(const BitgetPricePlugin&) = delete;
+    CryptoPricePlugin();
+    CryptoPricePlugin(const CryptoPricePlugin&) = delete;
+    CryptoPricePlugin& operator=(const CryptoPricePlugin&) = delete;
 
     void ApplySettings(Settings settings);
     void ApplyPendingResult();
@@ -100,6 +100,6 @@ private:
     std::chrono::steady_clock::time_point nextRefresh_{};
     std::wstring tooltip_{L"Crypto 行情：等待数据"};
 };
-} // namespace bitget
+} // namespace cryptoprice
 
 extern "C" __declspec(dllexport) ITMPlugin* TMPluginGetInstance();

@@ -20,7 +20,7 @@
 - 所有价格和 24 小时涨跌幅保留两位小数
 - 默认任务栏项目汇总所有标的，同时提供各标的独立显示项
 - 后台刷新行情，同一数据源和市场类别只请求一次
-- 新配置保存到 `CryptoPrice.ini`，并兼容读取旧版 `BitgetPrice.ini`
+- 配置保存到 `CryptoPrice.ini`
 
 ## 统一市场映射
 
@@ -58,11 +58,10 @@ ctest --test-dir build-win32 -C Release --output-on-failure
 ## 安装和使用
 
 1. 完全退出 TrafficMonitor。
-2. 从旧版升级时，删除或移走 `plugins/BitgetPrice.dll`，避免两个版本同时加载。
-3. 将 `CryptoPrice.dll` 复制到 TrafficMonitor 的 `plugins` 文件夹。
-4. 启动 TrafficMonitor，在插件管理中打开“Crypto 行情”的选项。
-5. 选择 Bitget、OKX 或 Binance，再添加所需现货或合约标的。
-6. 在 TrafficMonitor 显示设置中启用汇总项或各标的独立项。
+2. 将 `CryptoPrice.dll` 复制到 TrafficMonitor 的 `plugins` 文件夹。
+3. 启动 TrafficMonitor，在插件管理中打开“Crypto 行情”的选项。
+4. 选择 Bitget、OKX 或 Binance，再添加所需现货或合约标的。
+5. 在 TrafficMonitor 显示设置中启用汇总项或各标的独立项。
 
 输入 `BTC/USDT`、`BTC-USDT` 或 `btcusdt` 都会转换成内部 symbol `BTCUSDT`。现货界面显示 `BTC/USDT`，合约界面显示 `BTCUSDT`。
 
