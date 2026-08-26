@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <functional>
 #include <string_view>
+#include <vector>
 
 namespace bitget
 {
@@ -153,6 +154,53 @@ std::string FractionFromOpen(const std::string& last, const std::string& open)
         return {};
     return std::to_string((lastValue - openValue) / openValue);
 }
+
+bool IsIpv4Literal(std::string_view value)
+{
+    int segmentCount = 0;
+    std::size_t position = 0;
+    while (position < value.size())
+    {
+        if (segmentCount == 4) return false;
+        int number = 0;
+        int digitCount = 0;
+        while (position < value.size() && value[position] >= '0' && value[position] <= '9')
+        {
+            number = number * 10 + value[position] - '0';
+            ++position;
+            ++digitCount;
+        }
+        if (digitCount == 0 || digitCount > 3 || number > 255) return false;
+        ++segmentCount;
+        if (position == value.size()) break;
+        if (value[position] != '.') return false;
+        ++position;
+    }
+    return segmentCount == 4;
+}
+}
+
+std::vector<std::string> ParseDohIpv4Addresses(const std::string& json)
+{
+    std::vector<std::string> addresses;
+    std::size_t position = 0;
+    while ((position = json.find("\"data\"", position)) != std::string::npos)
+    {
+        position = json.find(':', position + 6);
+        if (position == std::string::npos) break;
+        ++position;
+        while (position < json.size() && std::isspace(static_cast<unsigned char>(json[position])))
+            ++position;
+        if (position >= json.size() || json[position] != '"') continue;
+        const std::size_t end = json.find('"', ++position);
+        if (end == std::string::npos) break;
+        const std::string candidate = json.substr(position, end - position);
+        if (IsIpv4Literal(candidate) &&
+            std::find(addresses.begin(), addresses.end(), candidate) == addresses.end())
+            addresses.push_back(candidate);
+        position = end + 1;
+    }
+    return addresses;
 }
 
 bool ParseTickerResponse(const std::string& json,

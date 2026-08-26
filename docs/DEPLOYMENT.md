@@ -17,7 +17,7 @@ CryptoPrice.dll
 | 数据源 | 域名 |
 | --- | --- |
 | Bitget | `api.bitget.com` |
-| OKX | `www.okx.com` |
+| OKX | `eea.okx.com`、`www.okx.com` |
 | Binance 现货 | `api.binance.com` |
 | Binance USDT/USDC 合约 | `fapi.binance.com` |
 | Binance 币本位合约 | `dapi.binance.com` |
@@ -140,6 +140,7 @@ Count=2
 | 出现两个行情插件 | 删除旧 `BitgetPrice.dll`，只保留 `CryptoPrice.dll` |
 | 切换数据源后仍显示旧标签 | 确认已点击“确定”，必要时重启 TrafficMonitor |
 | 所有行情为 `--` | hover 查看错误，检查对应域名、防火墙和代理 |
+| OKX 出现 Windows 错误 12007 | DNS 无法解析 OKX 入口；插件依次尝试 `eea.okx.com`、`www.okx.com`、本地代理（Clash/v2rayN 常用端口）和 DoH 解析真实 IP 直连，仍失败时检查 DNS、代理和两个域名 |
 | 只有 Binance 现货失败 | 当前网络或地区可能无法访问 `api.binance.com` |
 | 币本位标的找不到 | 使用 `BTCUSD`，插件会转换 `_PERP` 或 `-SWAP` |
 | 配置无法保存 | 检查 TrafficMonitor 插件配置目录写权限 |

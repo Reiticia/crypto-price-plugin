@@ -126,6 +126,8 @@ Binance：
 - 两个价格均保留两位小数；
 - 进程退出码为 0。
 
+实时测试最多等待约 20 秒，以覆盖 OKX 直连失败后依次尝试本地代理和 DoH 解析真实 IP 的首次请求。
+
 ## 7. DLL 导出和架构
 
 ```powershell
@@ -164,6 +166,7 @@ TMPluginGetInstance
 - 每家数据源分别测试 0、1、2 和 16 个标的；
 - SPOT、USDT、USDC、币本位混合；
 - OKX `BTC-USD-SWAP` 与 Binance `BTCUSD_PERP`；
+- OKX 直连失败时依次回退到区域入口、本地代理（Clash/v2rayN 常用端口）和 DoH 解析真实 IP；
 - Binance 日期交割合约不会覆盖永续；
 - 数据源连续快速切换，不能显示上一家的迟到响应；
 - 2 秒和 300 秒刷新边界；
@@ -176,7 +179,7 @@ TMPluginGetInstance
 | --- | --- |
 | CMake 找不到编译器 | 安装 Visual Studio C++ 桌面开发工作负载 |
 | `LoadLibrary failed: 193` | DLL 与测试程序架构不一致 |
-| OKX 价格为 `--` | 检查 `www.okx.com:443` 和 instrument 是否存在 |
+| OKX 价格为 `--` | 检查 `www.okx.com:443`、`eea.okx.com:443` 和 instrument 是否存在 |
 | Binance 现货失败、合约正常 | 检查所在地区是否可访问 `api.binance.com` |
 | 币本位找不到标的 | 使用插件标准 symbol，例如 `BTCUSD`，不要输入 `_PERP` 或 `-SWAP` |
 | 实时测试超时 | 检查 DNS、代理、防火墙和交易所状态 |

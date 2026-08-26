@@ -36,6 +36,17 @@ int main()
     Check(std::wstring(bitget::DataSourceKey(bitget::DataSource::Bitget)) == L"bitget",
           "serialize Bitget source");
 
+    const auto dohAddresses = bitget::ParseDohIpv4Addresses(
+        R"({"Answer":[{"data":"eea.okx.com.cdn.cloudflare.net."},{"data":"104.18.43.174"},{"data":"172.64.144.82"},{"data":"104.18.43.174"}]})");
+    Check(dohAddresses.size() == 2 && dohAddresses[0] == "104.18.43.174" &&
+          dohAddresses[1] == "172.64.144.82", "parse unique DoH IPv4 addresses");
+
+    const auto googleDohAddresses = bitget::ParseDohIpv4Addresses(
+        R"({"Status":0,"Answer":[{"name":"www.okx.com.","type":5,"TTL":300,"data":"www.okx.com.cdn.cloudflare.net."},{"name":"www.okx.com.cdn.cloudflare.net.","type":1,"TTL":300,"data":"172.64.144.82"},{"name":"www.okx.com.cdn.cloudflare.net.","type":1,"TTL":300,"data":"104.18.43.174"}]})");
+    Check(googleDohAddresses.size() == 2 &&
+          googleDohAddresses[0] == "172.64.144.82" &&
+          googleDohAddresses[1] == "104.18.43.174", "parse google DoH IPv4 addresses");
+
     const std::string response = R"({
         "code":"00000","msg":"success","data":[
           {"category":"USDT-FUTURES","symbol":"BTCUSDT","lastPrice":"90216.3",

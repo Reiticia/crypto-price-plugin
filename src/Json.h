@@ -2,6 +2,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace bitget
 {
@@ -30,4 +31,5 @@ bool ParseBinanceTickerResponse(const std::string& json, bool coinMargined,
 bool OverlayBinancePremium(const std::string& json, bool coinMargined,
                            std::unordered_map<std::string, Ticker>& tickers,
                            std::string& error);
+std::vector<std::string> ParseDohIpv4Addresses(const std::string& json);
 } // namespace bitget

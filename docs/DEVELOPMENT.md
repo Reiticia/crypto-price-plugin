@@ -109,6 +109,15 @@ GET https://www.okx.com/api/v5/public/mark-price?instType=SWAP
 GET https://www.okx.com/api/v5/market/index-tickers?quoteCcy=USDT|USDC|USD
 ```
 
+插件访问 OKX 时按以下顺序回退，适配 DNS 被污染或需要代理出口的网络：
+
+1. 直连 `eea.okx.com`、`www.okx.com`（同一套 v5 公共接口），并记住本次运行中可用
+   的入口；
+2. 通过本地代理重试：先读当前用户的系统代理（`WinHttpGetIEProxyConfigForCurrentUser`），
+   再尝试 Clash / v2rayN 常见端口 `7897`、`7890`、`10809`、`1080`，代理端自行解析域名；
+3. 通过 DoH（`cloudflare-dns.com`/`1.1.1.1`、`dns.google`/`8.8.8.8`）解析 OKX 真实
+   IP 后直连，绕过被污染的 DNS。
+
 OKX 的 `BTC-USDT-SWAP` 会规范化成 `BTCUSDT`。只有选择标记价或指数价时才请求对应的附加接口。
 
 ### Binance

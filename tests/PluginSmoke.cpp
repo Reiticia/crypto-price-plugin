@@ -76,7 +76,8 @@ int wmain(int argumentCount, wchar_t** arguments)
     if (valid && live)
     {
         plugin->DataRequired();
-        for (int attempt = 0; attempt < 20; ++attempt)
+        constexpr int liveAttempts = 40;
+        for (int attempt = 0; attempt < liveAttempts; ++attempt)
         {
             Sleep(500);
             plugin->DataRequired();
@@ -97,7 +98,7 @@ int wmain(int argumentCount, wchar_t** arguments)
                 }
                 break;
             }
-            if (attempt == 19)
+            if (attempt == liveAttempts - 1)
             {
                 std::wcerr << L"Live quote check failed: " << plugin->GetTooltipInfo() << L'\n';
                 valid = false;
