@@ -134,7 +134,7 @@ const wchar_t* BitgetPricePlugin::GetInfo(PluginInfoIndex index)
     {
     case TMI_NAME: return L"Crypto 行情";
     case TMI_DESCRIPTION: return L"切换 Bitget、OKX、Binance 并监控多个现货与合约行情";
-    case TMI_AUTHOR: return L"OpenAI Codex";
+    case TMI_AUTHOR: return L"Reiticia";
     case TMI_COPYRIGHT: return L"Copyright (C) 2026";
     case TMI_VERSION: return L"2.0.0";
     case TMI_URL: return L"https://github.com/zhongyang219/TrafficMonitorPlugins";
