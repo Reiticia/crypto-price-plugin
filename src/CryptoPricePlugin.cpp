@@ -67,6 +67,48 @@ PriceItem::PriceItem(std::size_t index)
 {
 }
 
+int PriceItem::GetItemWidthEx(void* hdc) const
+{
+    if (!customDraw_ || !hdc) return 0;
+    const std::wstring sample = label_ + sample_;
+    SIZE size{};
+    return GetTextExtentPoint32W(static_cast<HDC>(hdc), sample.c_str(),
+                                 static_cast<int>(sample.size()), &size)
+        ? size.cx : 0;
+}
+
+void PriceItem::DrawItem(void* hdc, int x, int y, int width, int height, bool)
+{
+    if (!customDraw_ || !hdc || width <= 0 || height <= 0) return;
+
+    HDC deviceContext = static_cast<HDC>(hdc);
+    const int saved = SaveDC(deviceContext);
+    SetBkMode(deviceContext, TRANSPARENT);
+
+    const CryptoPricePlugin& plugin = CryptoPricePlugin::Instance();
+    const COLORREF valueColor = plugin.drawingTaskbar_.load()
+        ? static_cast<COLORREF>(plugin.valueTextColor_.load()) : GetTextColor(deviceContext);
+    const COLORREF labelColor = plugin.drawingTaskbar_.load()
+        ? static_cast<COLORREF>(plugin.labelTextColor_.load()) : valueColor;
+
+    RECT labelRect{x, y, x + width, y + height};
+    SIZE labelSize{};
+    GetTextExtentPoint32W(deviceContext, label_.c_str(), static_cast<int>(label_.size()),
+                          &labelSize);
+    labelRect.right = (std::min)(labelRect.right, labelRect.left + labelSize.cx);
+    SetTextColor(deviceContext, labelColor);
+    DrawTextW(deviceContext, label_.c_str(), static_cast<int>(label_.size()), &labelRect,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+
+    const LONG valueLeft = (std::min)(static_cast<LONG>(x) + labelSize.cx,
+                                      static_cast<LONG>(x + width));
+    RECT valueRect{valueLeft, y, x + width, y + height};
+    SetTextColor(deviceContext, valueColor);
+    DrawTextW(deviceContext, value_.c_str(), static_cast<int>(value_.size()), &valueRect,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+    if (saved != 0) RestoreDC(deviceContext, saved);
+}
+
 CryptoPricePlugin& CryptoPricePlugin::Instance()
 {
     static CryptoPricePlugin instance;
@@ -83,7 +125,12 @@ CryptoPricePlugin::CryptoPricePlugin()
     // 保留旧版第一个显示项的 ID，使升级后原来已勾选的任务栏项目自动变为汇总项。
     items_[0].id_ = L"CryptoPrice0";
     for (std::size_t index = 0; index < kMaxInstruments; ++index)
+    {
         items_[index + 1].id_ = L"CryptoPriceItem" + std::to_wstring(index);
+        // TrafficMonitor 会按 ItemId 缓存标签。独立项的 symbol 会变化，因此由插件
+        // 自绘标签和值，避免新标的继承同一槽位的旧标签。
+        items_[index + 1].customDraw_ = true;
+    }
     UpdatePlaceholder();
 }
 
@@ -136,7 +183,7 @@ const wchar_t* CryptoPricePlugin::GetInfo(PluginInfoIndex index)
     case TMI_DESCRIPTION: return L"切换 Bitget、OKX、Binance 并监控多个现货与合约行情";
     case TMI_AUTHOR: return L"Reiticia";
     case TMI_COPYRIGHT: return L"Copyright (C) 2026";
-    case TMI_VERSION: return L"2.0.0";
+    case TMI_VERSION: return L"2.0.1";
     case TMI_URL: return L"https://github.com/zhongyang219/TrafficMonitorPlugins";
     default: return L"";
     }
@@ -149,10 +196,26 @@ const wchar_t* CryptoPricePlugin::GetTooltipInfo()
 
 void CryptoPricePlugin::OnExtenedInfo(ExtendedInfoIndex index, const wchar_t* data)
 {
-    if (index != EI_CONFIG_DIR || !data) return;
-    config_.SetDirectory(data);
-    ApplySettings(config_.Load());
-    StartRefresh(true);
+    if (!data) return;
+    switch (index)
+    {
+    case EI_CONFIG_DIR:
+        config_.SetDirectory(data);
+        ApplySettings(config_.Load());
+        StartRefresh(true);
+        break;
+    case EI_DRAW_TASKBAR_WND:
+        drawingTaskbar_ = std::wcstol(data, nullptr, 10) != 0;
+        break;
+    case EI_LABEL_TEXT_COLOR:
+        labelTextColor_ = std::wcstoul(data, nullptr, 10);
+        break;
+    case EI_VALUE_TEXT_COLOR:
+        valueTextColor_ = std::wcstoul(data, nullptr, 10);
+        break;
+    default:
+        break;
+    }
 }
 
 void CryptoPricePlugin::OnInitialize(ITrafficMonitor* application)

@@ -27,6 +27,10 @@ public:
     const wchar_t* GetItemLableText() const override { return label_.c_str(); }
     const wchar_t* GetItemValueText() const override { return value_.c_str(); }
     const wchar_t* GetItemValueSampleText() const override { return sample_.c_str(); }
+    bool IsCustomDraw() const override { return customDraw_; }
+    int GetItemWidth() const override { return customDraw_ ? 180 : 0; }
+    int GetItemWidthEx(void* hdc) const override;
+    void DrawItem(void* hdc, int x, int y, int width, int height, bool) override;
 
 private:
     friend class CryptoPricePlugin;
@@ -36,6 +40,7 @@ private:
     std::wstring value_;
     std::wstring sample_{L"000000.00 +00.00%"};
     std::wstring detail_;
+    bool customDraw_{};
 };
 
 class CryptoPricePlugin final : public ITMPlugin
@@ -56,6 +61,7 @@ public:
     void OnPluginCommand(int commandIndex, void*, void*) override;
 
 private:
+    friend class PriceItem;
     struct QuoteResult
     {
         Instrument instrument;
@@ -99,6 +105,9 @@ private:
     std::atomic<unsigned long long> generation_{1};
     std::chrono::steady_clock::time_point nextRefresh_{};
     std::wstring tooltip_{L"Crypto 行情：等待数据"};
+    std::atomic<bool> drawingTaskbar_{false};
+    std::atomic<unsigned long> labelTextColor_{};
+    std::atomic<unsigned long> valueTextColor_{};
 };
 } // namespace cryptoprice
 
