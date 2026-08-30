@@ -1,8 +1,12 @@
 #include "Config.h"
 #include "Json.h"
 
-#include <iostream>
+#include <Windows.h>
+
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
 #include <string>
 #include <unordered_map>
 
@@ -35,6 +39,46 @@ int main()
           "parse Binance source");
     Check(std::wstring(cryptoprice::DataSourceKey(cryptoprice::DataSource::Bitget)) == L"bitget",
           "serialize Bitget source");
+
+    Check(cryptoprice::InferPricePrecision("90216.3") == 1,
+          "infer 1 decimal from price string");
+    Check(cryptoprice::InferPricePrecision("3100.25") == 2,
+          "infer 2 decimals from price string");
+    Check(cryptoprice::InferPricePrecision("0.00001234") == 8,
+          "infer 8 decimals from low-price string");
+    Check(cryptoprice::InferPricePrecision("80001") == 0,
+          "infer 0 decimals from integer price");
+    Check(cryptoprice::InferPricePrecision("") == 0, "infer empty string");
+    Check(cryptoprice::InferPricePrecision("1.23456789012345") == 10,
+          "clamp inferred precision to 10");
+
+    wchar_t temporaryPath[MAX_PATH]{};
+    GetTempPathW(MAX_PATH, temporaryPath);
+    const std::filesystem::path configDirectory =
+        std::filesystem::path(temporaryPath) / L"CryptoPricePluginTests";
+    std::filesystem::create_directories(configDirectory);
+    cryptoprice::ConfigStore config;
+    config.SetDirectory(configDirectory.wstring());
+    cryptoprice::Settings settings;
+    settings.refreshSeconds = 30;
+    settings.precision = 6;
+    Check(config.Save(settings), "save config without credentials");
+    const cryptoprice::Settings loaded = config.Load();
+    Check(loaded.refreshSeconds == 30, "load refresh seconds");
+    Check(loaded.precision == 6, "load fixed precision");
+    Check(loaded.instruments.size() == 1 &&
+              loaded.instruments[0].symbol == L"BTCUSDT",
+          "load default instrument");
+    // 自动精度（-1）往返，等价于旧配置缺少 DisplayPrecision 键时回退自动。
+    cryptoprice::Settings autoPrecision;
+    autoPrecision.precision = -1;
+    Check(config.Save(autoPrecision), "save auto precision");
+    Check(config.Load().precision == -1, "round-trip auto precision");
+    // 手写脏值回退自动，而不是被解析为固定 0 位。
+    WritePrivateProfileStringW(L"General", L"DisplayPrecision", L"abc",
+                               config.Path().c_str());
+    Check(config.Load().precision == -1, "dirty INI value falls back to auto");
+    std::filesystem::remove_all(configDirectory);
 
     const auto dohAddresses = cryptoprice::ParseDohIpv4Addresses(
         R"({"Answer":[{"data":"eea.okx.com.cdn.cloudflare.net."},{"data":"104.18.43.174"},{"data":"172.64.144.82"},{"data":"104.18.43.174"}]})");

@@ -38,6 +38,7 @@ private:
     HWND priceType_{};
     HWND dataSource_{};
     HWND refresh_{};
+    HWND precision_{};
     HWND showChange_{};
     HWND status_{};
     bool accepted_{};

@@ -25,6 +25,7 @@ constexpr int kShowChange = 1008;
 constexpr int kStatus = 1009;
 constexpr int kUpdate = 1010;
 constexpr int kDataSource = 1011;
+constexpr int kPrecision = 1012;
 
 HWND AddControl(HWND parent, const wchar_t* className, const wchar_t* text,
                 DWORD style, int x, int y, int width, int height, int id)
@@ -218,6 +219,16 @@ void OptionsWindow::CreateControls()
                              WS_TABSTOP | BS_AUTOCHECKBOX, 18, 318, 190, 24, kShowChange);
     SendMessageW(showChange_, BM_SETCHECK, draft_.showChange ? BST_CHECKED : BST_UNCHECKED, 0);
 
+    // "小数位数"：留空自动推断，填 0–10 固定显示位数。
+    AddControl(window_, L"STATIC", L"小数位数", 0, 18, 354, 65, 20, -1);
+    precision_ = AddControl(window_, L"EDIT", L"",
+                            WS_BORDER | WS_TABSTOP | ES_NUMBER,
+                            88, 350, 44, 25, kPrecision);
+    if (draft_.precision >= 0)
+        SetWindowTextW(precision_, std::to_wstring(draft_.precision).c_str());
+    SendMessageW(precision_, EM_SETLIMITTEXT, 4, 0);
+    AddControl(window_, L"STATIC", L"留空自动；0–10 固定", 0, 140, 354, 160, 20, -1);
+
     AddControl(window_, L"STATIC", L"数据源", 0, 270, 322, 65, 20, -1);
     dataSource_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
                              340, 318, 178, 120, kDataSource);
@@ -366,6 +377,25 @@ void OptionsWindow::Accept()
     draft_.dataSource = source == 1 ? DataSource::Okx :
                         source == 2 ? DataSource::Binance : DataSource::Bitget;
     draft_.showChange = SendMessageW(showChange_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+
+    std::array<wchar_t, 8> precisionText{};
+    GetWindowTextW(precision_, precisionText.data(),
+                   static_cast<int>(precisionText.size()));
+    draft_.precision = -1; // 默认自动推断
+    wchar_t* precisionEnd = nullptr;
+    const long precisionValue = std::wcstol(precisionText.data(), &precisionEnd, 10);
+    if (precisionText[0] != L'\0' &&
+        (precisionEnd == precisionText.data() || *precisionEnd != L'\0' ||
+         precisionValue < 0 || precisionValue > 10))
+    {
+        SetStatus(L"小数位数必须是 0 到 10 之间的整数，或留空为自动判断。 ");
+        SetFocus(precision_);
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (precisionText[0] != L'\0')
+        draft_.precision = static_cast<int>(precisionValue);
+
     accepted_ = true;
     DestroyWindow(window_);
 }

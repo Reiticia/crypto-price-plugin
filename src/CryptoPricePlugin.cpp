@@ -18,15 +18,30 @@ namespace cryptoprice
 {
 namespace
 {
-std::wstring FormatPrice(const std::string& raw)
+std::wstring FormatPrice(const std::string& raw, int precision)
 {
     if (raw.empty()) return L"--";
     char* end = nullptr;
     const double price = std::strtod(raw.c_str(), &end);
     if (end == raw.c_str() || *end != '\0' || !std::isfinite(price)) return L"--";
+    // 固定精度优先；未配置时按价格字符串自动推断小数位。
+    const int effective = precision >= 0 ? precision : InferPricePrecision(raw);
     std::wostringstream stream;
-    stream << std::fixed << std::setprecision(2) << price;
+    stream << std::fixed << std::setprecision(effective) << price;
     return stream.str();
+}
+
+// 示例文本占位：固定精度时按位数生成，自动时用两位小数示意。
+std::wstring PriceSample(int precision)
+{
+    if (precision < 0) return L"000000.00";
+    std::wstring sample = L"000000";
+    if (precision > 0)
+    {
+        sample += L'.';
+        sample.append(static_cast<std::size_t>(precision), L'0');
+    }
+    return sample;
 }
 
 bool IsSpot(const Instrument& instrument)
@@ -39,12 +54,12 @@ std::wstring DisplaySymbol(const Instrument& instrument)
     return FormatInstrumentSymbol(instrument);
 }
 
-std::wstring SelectPrice(const Ticker& ticker, PriceType type, bool spot)
+std::wstring SelectPrice(const Ticker& ticker, PriceType type, bool spot, int precision)
 {
     const std::string* value = &ticker.lastPrice;
     if (!spot && type == PriceType::Mark) value = &ticker.markPrice;
     else if (!spot && type == PriceType::Index) value = &ticker.indexPrice;
-    return FormatPrice(*value);
+    return FormatPrice(*value, precision);
 }
 
 std::wstring FormatChange(const std::string& raw)
@@ -183,7 +198,7 @@ const wchar_t* CryptoPricePlugin::GetInfo(PluginInfoIndex index)
     case TMI_DESCRIPTION: return L"切换 Bitget、OKX、Binance 并监控多个现货与合约行情";
     case TMI_AUTHOR: return L"Reiticia";
     case TMI_COPYRIGHT: return L"Copyright (C) 2026";
-    case TMI_VERSION: return L"2.0.1";
+    case TMI_VERSION: return L"2.1.0";
     case TMI_URL: return L"https://github.com/zhongyang219/TrafficMonitorPlugins";
     default: return L"";
     }
@@ -255,7 +270,7 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
                          DisplaySymbol(settings_.instruments[index]);
             item.label_ = DisplaySymbol(settings_.instruments[index]) + L": ";
             item.value_ = L"--";
-            item.sample_ = L"000000.00";
+            item.sample_ = PriceSample(settings_.precision);
             if (settings_.showChange) item.sample_ += L" +00.00%";
             item.detail_ = L"等待行情";
         }
@@ -377,12 +392,13 @@ void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
         item.detail_ = result.error.empty() ? L"行情获取失败" : result.error;
         return;
     }
-    item.value_ = SelectPrice(result.ticker, settings.priceType, IsSpot(result.instrument));
+    item.value_ = SelectPrice(result.ticker, settings.priceType,
+                              IsSpot(result.instrument), settings.precision);
     if (settings.showChange) item.value_ += FormatChange(result.ticker.price24hPcnt);
-    item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice);
+    item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice, settings.precision);
     if (!IsSpot(result.instrument))
-        item.detail_ += L" | 标记 " + FormatPrice(result.ticker.markPrice) +
-                        L" | 指数 " + FormatPrice(result.ticker.indexPrice);
+        item.detail_ += L" | 标记 " + FormatPrice(result.ticker.markPrice, settings.precision) +
+                        L" | 指数 " + FormatPrice(result.ticker.indexPrice, settings.precision);
 }
 
 void CryptoPricePlugin::RebuildAggregate()
@@ -403,7 +419,8 @@ void CryptoPricePlugin::RebuildAggregate()
             aggregate.sample_ += L" | ";
         }
         aggregate.value_ += DisplaySymbol(settings_.instruments[index]) + L" " + items_[index + 1].value_;
-        aggregate.sample_ += DisplaySymbol(settings_.instruments[index]) + L" 000000.00";
+        aggregate.sample_ += DisplaySymbol(settings_.instruments[index]) + L" " +
+                             PriceSample(settings_.precision);
         if (settings_.showChange) aggregate.sample_ += L" +00.00%";
     }
 }

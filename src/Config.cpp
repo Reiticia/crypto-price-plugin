@@ -21,6 +21,20 @@ std::wstring ReadString(const std::wstring& path, const wchar_t* section,
 }
 }
 
+int InferPricePrecision(const std::string& raw)
+{
+    const std::size_t point = raw.find('.');
+    if (point == std::string::npos) return 0;
+    std::size_t digits = 0;
+    for (std::size_t index = point + 1; index < raw.size(); ++index)
+    {
+        const char character = raw[index];
+        if (character < '0' || character > '9') break;
+        ++digits;
+    }
+    return static_cast<int>((std::min)(digits, static_cast<std::size_t>(10)));
+}
+
 std::wstring NormalizeSymbol(std::wstring value)
 {
     value.erase(std::remove_if(value.begin(), value.end(), [](wchar_t character) {
@@ -128,6 +142,13 @@ Settings ConfigStore::Load() const
     settings.showChange = GetPrivateProfileIntW(L"General", L"ShowChange", 1, loadPath->c_str()) != 0;
     settings.priceType = PriceTypeFromKey(ReadString(*loadPath, L"General", L"PriceType", L"last"));
     settings.dataSource = DataSourceFromKey(ReadString(*loadPath, L"General", L"DataSource", L"bitget"));
+    settings.precision = -1; // 默认自动推断
+    const std::wstring precisionText =
+        ReadString(*loadPath, L"General", L"DisplayPrecision", L"-1");
+    wchar_t* precisionEnd = nullptr;
+    const long precisionValue = std::wcstol(precisionText.c_str(), &precisionEnd, 10);
+    if (precisionEnd != precisionText.c_str() && *precisionEnd == L'\0')
+        settings.precision = std::clamp(static_cast<int>(precisionValue), -1, 10);
 
     const int count = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"General", L"Count", 1, loadPath->c_str())),
@@ -159,6 +180,8 @@ bool ConfigStore::Save(const Settings& settings) const
     ok &= write(L"General", L"RefreshSeconds", std::to_wstring(settings.refreshSeconds));
     ok &= write(L"General", L"ShowChange", settings.showChange ? L"1" : L"0");
     ok &= write(L"General", L"PriceType", PriceTypeKey(settings.priceType));
+    ok &= write(L"General", L"DisplayPrecision",
+                std::to_wstring(std::clamp(settings.precision, -1, 10)));
     const std::size_t count = (std::min)(settings.instruments.size(), kMaxInstruments);
     ok &= write(L"General", L"Count", std::to_wstring(count));
     for (std::size_t index = 0; index < count; ++index)
