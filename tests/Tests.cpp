@@ -61,23 +61,33 @@ int main()
     config.SetDirectory(configDirectory.wstring());
     cryptoprice::Settings settings;
     settings.refreshSeconds = 30;
-    settings.precision = 6;
+    settings.instruments[0].precision = 6;
     Check(config.Save(settings), "save config without credentials");
     const cryptoprice::Settings loaded = config.Load();
     Check(loaded.refreshSeconds == 30, "load refresh seconds");
-    Check(loaded.precision == 6, "load fixed precision");
     Check(loaded.instruments.size() == 1 &&
-              loaded.instruments[0].symbol == L"BTCUSDT",
-          "load default instrument");
-    // 自动精度（-1）往返，等价于旧配置缺少 DisplayPrecision 键时回退自动。
-    cryptoprice::Settings autoPrecision;
-    autoPrecision.precision = -1;
-    Check(config.Save(autoPrecision), "save auto precision");
-    Check(config.Load().precision == -1, "round-trip auto precision");
-    // 手写脏值回退自动，而不是被解析为固定 0 位。
-    WritePrivateProfileStringW(L"General", L"DisplayPrecision", L"abc",
+              loaded.instruments[0].symbol == L"BTCUSDT" &&
+              loaded.instruments[0].precision == 6,
+          "load per-instrument fixed precision");
+    // 两个标的各带独立精度往返。
+    cryptoprice::Settings two;
+    two.instruments = {
+        {L"USDT-FUTURES", L"BTCUSDT", 2},
+        {L"SPOT", L"ETHUSDT", -1},
+    };
+    Check(config.Save(two), "save two instruments with precision");
+    const cryptoprice::Settings loadedTwo = config.Load();
+    Check(loadedTwo.instruments.size() == 2 &&
+              loadedTwo.instruments[0].precision == 2 &&
+              loadedTwo.instruments[1].precision == -1,
+          "round-trip per-instrument precision");
+    // 某标的 Precision 键写脏值，仅该标的回退自动（-1），其余不受影响。
+    WritePrivateProfileStringW(L"Instrument0", L"Precision", L"abc",
                                config.Path().c_str());
-    Check(config.Load().precision == -1, "dirty INI value falls back to auto");
+    const cryptoprice::Settings dirty = config.Load();
+    Check(dirty.instruments[0].precision == -1 &&
+              dirty.instruments[1].precision == -1,
+          "dirty precision key falls back to auto per instrument");
     std::filesystem::remove_all(configDirectory);
 
     const auto dohAddresses = cryptoprice::ParseDohIpv4Addresses(

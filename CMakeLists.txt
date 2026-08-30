@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(CryptoPricePlugin VERSION 2.1.0 LANGUAGES CXX)
+project(CryptoPricePlugin VERSION 2.2.0 LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "CryptoPricePlugin can only be built for Windows.")

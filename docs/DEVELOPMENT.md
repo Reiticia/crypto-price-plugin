@@ -155,10 +155,12 @@ Count=2
 [Instrument0]
 Category=USDT-FUTURES
 Symbol=BTCUSDT
+Precision=2
 
 [Instrument1]
 Category=SPOT
 Symbol=ETHUSDT
+Precision=-1
 ```
 
 规则：
@@ -167,6 +169,7 @@ Symbol=ETHUSDT
 - `RefreshSeconds` 范围为 2–300；
 - `PriceType` 可为 `last`、`mark`、`index`；
 - `Count` 范围为 0–16；
+- `Precision` 为每个标的独立的小数位数（-1 自动，0–10 固定），缺省或脏值回退 -1；
 - 现货忽略 `mark` 或 `index` 设置，始终使用最新价。
 
 ## 9. 构建

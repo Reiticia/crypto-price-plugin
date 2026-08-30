@@ -196,6 +196,16 @@ void OptionsWindow::CreateControls()
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"币本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"现货"));
     SendMessageW(category_, CB_SETCURSEL, 0, 0);
+
+    // "小数位数"作用于当前选中标的：留空自动推断，填 0–10 固定显示位数。
+    AddControl(window_, L"STATIC", L"小数位数", 0, 18, 282, 65, 20, -1);
+    precision_ = AddControl(window_, L"EDIT", L"",
+                            WS_BORDER | WS_TABSTOP | ES_NUMBER,
+                            88, 278, 44, 25, kPrecision);
+    SendMessageW(precision_, EM_SETLIMITTEXT, 4, 0);
+    AddControl(window_, L"STATIC", L"留空自动；0–10 固定（随选中标的保存）",
+               0, 140, 282, 220, 20, -1);
+
     AddControl(window_, L"BUTTON", L"添加新标的", WS_TABSTOP | BS_PUSHBUTTON,
                530, 233, 112, 27, kAdd);
     AddControl(window_, L"BUTTON", L"更新选中项", WS_TABSTOP | BS_PUSHBUTTON,
@@ -203,35 +213,25 @@ void OptionsWindow::CreateControls()
     AddControl(window_, L"BUTTON", L"删除选中项", WS_TABSTOP | BS_PUSHBUTTON,
                530, 301, 112, 27, kRemove);
 
-    AddControl(window_, L"STATIC", L"显示价格", 0, 18, 282, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"显示价格", 0, 18, 322, 65, 20, -1);
     priceType_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
-                            88, 278, 162, 150, kPriceType);
+                            88, 318, 162, 150, kPriceType);
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"最新价格"));
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"标记价格（仅合约）"));
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"指数价格（仅合约）"));
     SendMessageW(priceType_, CB_SETCURSEL, static_cast<WPARAM>(draft_.priceType), 0);
 
-    AddControl(window_, L"STATIC", L"刷新间隔", 0, 270, 282, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"刷新间隔", 0, 270, 322, 65, 20, -1);
     refresh_ = AddControl(window_, L"EDIT", std::to_wstring(draft_.refreshSeconds).c_str(),
-                          WS_BORDER | WS_TABSTOP | ES_NUMBER, 340, 278, 70, 25, kRefresh);
-    AddControl(window_, L"STATIC", L"秒（2–300）", 0, 416, 282, 95, 20, -1);
+                          WS_BORDER | WS_TABSTOP | ES_NUMBER, 340, 318, 70, 25, kRefresh);
+    AddControl(window_, L"STATIC", L"秒（2–300）", 0, 416, 322, 95, 20, -1);
     showChange_ = AddControl(window_, L"BUTTON", L"显示 24 小时涨跌幅",
-                             WS_TABSTOP | BS_AUTOCHECKBOX, 18, 318, 190, 24, kShowChange);
+                             WS_TABSTOP | BS_AUTOCHECKBOX, 18, 358, 190, 24, kShowChange);
     SendMessageW(showChange_, BM_SETCHECK, draft_.showChange ? BST_CHECKED : BST_UNCHECKED, 0);
 
-    // "小数位数"：留空自动推断，填 0–10 固定显示位数。
-    AddControl(window_, L"STATIC", L"小数位数", 0, 18, 354, 65, 20, -1);
-    precision_ = AddControl(window_, L"EDIT", L"",
-                            WS_BORDER | WS_TABSTOP | ES_NUMBER,
-                            88, 350, 44, 25, kPrecision);
-    if (draft_.precision >= 0)
-        SetWindowTextW(precision_, std::to_wstring(draft_.precision).c_str());
-    SendMessageW(precision_, EM_SETLIMITTEXT, 4, 0);
-    AddControl(window_, L"STATIC", L"留空自动；0–10 固定", 0, 140, 354, 160, 20, -1);
-
-    AddControl(window_, L"STATIC", L"数据源", 0, 270, 322, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"数据源", 0, 270, 362, 65, 20, -1);
     dataSource_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
-                             340, 318, 178, 120, kDataSource);
+                             340, 358, 178, 120, kDataSource);
     SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Bitget"));
     SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"OKX"));
     SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Binance"));
@@ -274,7 +274,24 @@ void OptionsWindow::LoadSelection()
     const Instrument& instrument = draft_.instruments[static_cast<std::size_t>(index)];
     SetWindowTextW(symbol_, FormatInstrumentSymbol(instrument).c_str());
     SendMessageW(category_, CB_SETCURSEL, CategoryIndex(instrument.category), 0);
+    if (instrument.precision >= 0)
+        SetWindowTextW(precision_, std::to_wstring(instrument.precision).c_str());
+    else
+        SetWindowTextW(precision_, L"");
     SetStatus(L"修改后点击“更新选中项”；要保留它并增加新标的，请点击“添加新标的”。");
+}
+
+int OptionsWindow::ReadPrecisionInput() const
+{
+    std::array<wchar_t, 8> precisionText{};
+    GetWindowTextW(precision_, precisionText.data(),
+                   static_cast<int>(precisionText.size()));
+    if (precisionText[0] == L'\0') return -1; // 留空 = 自动推断
+    wchar_t* end = nullptr;
+    const long value = std::wcstol(precisionText.data(), &end, 10);
+    if (end == precisionText.data() || *end != L'\0' || value < 0 || value > 10)
+        return -2; // 非法输入
+    return static_cast<int>(value);
 }
 
 Instrument OptionsWindow::ReadInstrument() const
@@ -282,7 +299,7 @@ Instrument OptionsWindow::ReadInstrument() const
     std::array<wchar_t, 64> symbol{};
     GetWindowTextW(symbol_, symbol.data(), static_cast<int>(symbol.size()));
     const int categoryIndex = static_cast<int>(SendMessageW(category_, CB_GETCURSEL, 0, 0));
-    return {CategoryAt(categoryIndex), NormalizeSymbol(symbol.data())};
+    return {CategoryAt(categoryIndex), NormalizeSymbol(symbol.data()), ReadPrecisionInput()};
 }
 
 void OptionsWindow::AddNew()
@@ -291,6 +308,13 @@ void OptionsWindow::AddNew()
     if (!IsValidSymbol(instrument.symbol))
     {
         SetStatus(L"交易对格式无效：只能使用 3–32 位英文字母或数字。 ");
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
+    if (instrument.precision == -2)
+    {
+        SetStatus(L"小数位数必须是 0 到 10 之间的整数，或留空为自动判断。 ");
+        SetFocus(precision_);
         MessageBeep(MB_ICONWARNING);
         return;
     }
@@ -329,6 +353,13 @@ void OptionsWindow::UpdateSelected()
         MessageBeep(MB_ICONWARNING);
         return;
     }
+    if (instrument.precision == -2)
+    {
+        SetStatus(L"小数位数必须是 0 到 10 之间的整数，或留空为自动判断。 ");
+        SetFocus(precision_);
+        MessageBeep(MB_ICONWARNING);
+        return;
+    }
     const auto duplicate = std::find(draft_.instruments.begin(), draft_.instruments.end(), instrument);
     if (duplicate != draft_.instruments.end() && duplicate != draft_.instruments.begin() + selected)
     {
@@ -354,6 +385,7 @@ void OptionsWindow::RemoveSelected()
         : (std::min)(selected, static_cast<int>(draft_.instruments.size() - 1));
     RefreshList(next);
     if (next < 0) SetWindowTextW(symbol_, L"");
+    if (next < 0) SetWindowTextW(precision_, L"");
     SetStatus(L"已从列表移除；点击“确定”后生效。 ");
 }
 
@@ -377,25 +409,6 @@ void OptionsWindow::Accept()
     draft_.dataSource = source == 1 ? DataSource::Okx :
                         source == 2 ? DataSource::Binance : DataSource::Bitget;
     draft_.showChange = SendMessageW(showChange_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-
-    std::array<wchar_t, 8> precisionText{};
-    GetWindowTextW(precision_, precisionText.data(),
-                   static_cast<int>(precisionText.size()));
-    draft_.precision = -1; // 默认自动推断
-    wchar_t* precisionEnd = nullptr;
-    const long precisionValue = std::wcstol(precisionText.data(), &precisionEnd, 10);
-    if (precisionText[0] != L'\0' &&
-        (precisionEnd == precisionText.data() || *precisionEnd != L'\0' ||
-         precisionValue < 0 || precisionValue > 10))
-    {
-        SetStatus(L"小数位数必须是 0 到 10 之间的整数，或留空为自动判断。 ");
-        SetFocus(precision_);
-        MessageBeep(MB_ICONWARNING);
-        return;
-    }
-    if (precisionText[0] != L'\0')
-        draft_.precision = static_cast<int>(precisionValue);
-
     accepted_ = true;
     DestroyWindow(window_);
 }

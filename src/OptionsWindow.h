@@ -27,6 +27,7 @@ private:
     void RemoveSelected();
     void Accept();
     Instrument ReadInstrument() const;
+    int ReadPrecisionInput() const;
     int SelectedIndex() const;
     void SetStatus(const wchar_t* text);
 

@@ -198,7 +198,7 @@ const wchar_t* CryptoPricePlugin::GetInfo(PluginInfoIndex index)
     case TMI_DESCRIPTION: return L"切换 Bitget、OKX、Binance 并监控多个现货与合约行情";
     case TMI_AUTHOR: return L"Reiticia";
     case TMI_COPYRIGHT: return L"Copyright (C) 2026";
-    case TMI_VERSION: return L"2.1.0";
+    case TMI_VERSION: return L"2.2.0";
     case TMI_URL: return L"https://github.com/zhongyang219/TrafficMonitorPlugins";
     default: return L"";
     }
@@ -270,7 +270,7 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
                          DisplaySymbol(settings_.instruments[index]);
             item.label_ = DisplaySymbol(settings_.instruments[index]) + L": ";
             item.value_ = L"--";
-            item.sample_ = PriceSample(settings_.precision);
+            item.sample_ = PriceSample(settings_.instruments[index].precision);
             if (settings_.showChange) item.sample_ += L" +00.00%";
             item.detail_ = L"等待行情";
         }
@@ -393,12 +393,12 @@ void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
         return;
     }
     item.value_ = SelectPrice(result.ticker, settings.priceType,
-                              IsSpot(result.instrument), settings.precision);
+                              IsSpot(result.instrument), result.instrument.precision);
     if (settings.showChange) item.value_ += FormatChange(result.ticker.price24hPcnt);
-    item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice, settings.precision);
+    item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice, result.instrument.precision);
     if (!IsSpot(result.instrument))
-        item.detail_ += L" | 标记 " + FormatPrice(result.ticker.markPrice, settings.precision) +
-                        L" | 指数 " + FormatPrice(result.ticker.indexPrice, settings.precision);
+        item.detail_ += L" | 标记 " + FormatPrice(result.ticker.markPrice, result.instrument.precision) +
+                        L" | 指数 " + FormatPrice(result.ticker.indexPrice, result.instrument.precision);
 }
 
 void CryptoPricePlugin::RebuildAggregate()
@@ -420,7 +420,7 @@ void CryptoPricePlugin::RebuildAggregate()
         }
         aggregate.value_ += DisplaySymbol(settings_.instruments[index]) + L" " + items_[index + 1].value_;
         aggregate.sample_ += DisplaySymbol(settings_.instruments[index]) + L" " +
-                             PriceSample(settings_.precision);
+                             PriceSample(settings_.instruments[index].precision);
         if (settings_.showChange) aggregate.sample_ += L" +00.00%";
     }
 }

@@ -94,9 +94,19 @@ RefreshSeconds=5
 ShowChange=1
 PriceType=mark
 Count=2
+
+[Instrument0]
+Category=USDT-FUTURES
+Symbol=BTCUSDT
+Precision=2
+
+[Instrument1]
+Category=SPOT
+Symbol=ETHUSDT
+Precision=-1
 ```
 
-`DataSource` 支持 `bitget`、`okx`、`binance`。
+`DataSource` 支持 `bitget`、`okx`、`binance`；`Precision` 为每个标的独立的小数位数（-1 自动，0–10 固定）。
 
 ## 7. 部署后验证
 

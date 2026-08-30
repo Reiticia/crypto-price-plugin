@@ -19,6 +19,17 @@ std::wstring ReadString(const std::wstring& path, const wchar_t* section,
                              static_cast<DWORD>(std::size(buffer)), path.c_str());
     return buffer;
 }
+
+// 读取小数位配置：缺省或脏值（非整数）一律回退 -1（自动推断）。
+int ReadPrecision(const std::wstring& path, const wchar_t* section)
+{
+    const std::wstring text = ReadString(path, section, L"Precision", L"-1");
+    wchar_t* end = nullptr;
+    const long value = std::wcstol(text.c_str(), &end, 10);
+    if (end != text.c_str() && *end == L'\0')
+        return std::clamp(static_cast<int>(value), -1, 10);
+    return -1;
+}
 }
 
 int InferPricePrecision(const std::string& raw)
@@ -142,13 +153,6 @@ Settings ConfigStore::Load() const
     settings.showChange = GetPrivateProfileIntW(L"General", L"ShowChange", 1, loadPath->c_str()) != 0;
     settings.priceType = PriceTypeFromKey(ReadString(*loadPath, L"General", L"PriceType", L"last"));
     settings.dataSource = DataSourceFromKey(ReadString(*loadPath, L"General", L"DataSource", L"bitget"));
-    settings.precision = -1; // 默认自动推断
-    const std::wstring precisionText =
-        ReadString(*loadPath, L"General", L"DisplayPrecision", L"-1");
-    wchar_t* precisionEnd = nullptr;
-    const long precisionValue = std::wcstol(precisionText.c_str(), &precisionEnd, 10);
-    if (precisionEnd != precisionText.c_str() && *precisionEnd == L'\0')
-        settings.precision = std::clamp(static_cast<int>(precisionValue), -1, 10);
 
     const int count = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"General", L"Count", 1, loadPath->c_str())),
@@ -160,6 +164,7 @@ Settings ConfigStore::Load() const
         Instrument instrument;
         instrument.category = ReadString(*loadPath, section.c_str(), L"Category", L"USDT-FUTURES");
         instrument.symbol = NormalizeSymbol(ReadString(*loadPath, section.c_str(), L"Symbol", L""));
+        instrument.precision = ReadPrecision(*loadPath, section.c_str());
         if ((instrument.category == L"SPOT" || instrument.category == L"USDT-FUTURES" ||
              instrument.category == L"USDC-FUTURES" || instrument.category == L"COIN-FUTURES") &&
             IsValidSymbol(instrument.symbol))
@@ -180,8 +185,6 @@ bool ConfigStore::Save(const Settings& settings) const
     ok &= write(L"General", L"RefreshSeconds", std::to_wstring(settings.refreshSeconds));
     ok &= write(L"General", L"ShowChange", settings.showChange ? L"1" : L"0");
     ok &= write(L"General", L"PriceType", PriceTypeKey(settings.priceType));
-    ok &= write(L"General", L"DisplayPrecision",
-                std::to_wstring(std::clamp(settings.precision, -1, 10)));
     const std::size_t count = (std::min)(settings.instruments.size(), kMaxInstruments);
     ok &= write(L"General", L"Count", std::to_wstring(count));
     for (std::size_t index = 0; index < count; ++index)
@@ -189,6 +192,8 @@ bool ConfigStore::Save(const Settings& settings) const
         const std::wstring section = L"Instrument" + std::to_wstring(index);
         ok &= write(section.c_str(), L"Category", settings.instruments[index].category);
         ok &= write(section.c_str(), L"Symbol", settings.instruments[index].symbol);
+        ok &= write(section.c_str(), L"Precision",
+                    std::to_wstring(std::clamp(settings.instruments[index].precision, -1, 10)));
     }
     return ok;
 }

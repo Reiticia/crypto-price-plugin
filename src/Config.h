@@ -26,6 +26,8 @@ struct Instrument
 {
     std::wstring category{L"USDT-FUTURES"};
     std::wstring symbol{L"BTCUSDT"};
+    // 该标的的价格小数位数：-1 表示自动（按行情价格字符串推断）；0..10 表示固定位数。
+    int precision{-1};
 
     bool operator==(const Instrument& other) const
     {
@@ -40,8 +42,6 @@ struct Settings
     int refreshSeconds{5};
     PriceType priceType{PriceType::Last};
     bool showChange{true};
-    // 价格小数位数：-1 表示自动（按行情价格字符串推断）；0..10 表示固定位数。
-    int precision{-1};
 };
 
 // 按价格字符串推断小数位数（小数点后位数，限制在 0..10），供自动精度使用。
