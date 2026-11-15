@@ -159,9 +159,11 @@ IPluginItem* CryptoPricePlugin::GetItem(int index)
 {
     if (index < 0) return nullptr;
     std::lock_guard<std::mutex> lock(settingsMutex_);
-    const std::size_t count = settings_.instruments.empty() ? 1 : settings_.instruments.size() + 1;
-    if (static_cast<std::size_t>(index) >= count || static_cast<std::size_t>(index) >= items_.size())
-        return nullptr;
+    // 未配置的槽位不注册，避免“显示设置”中出现无意义的占位项目。
+    const std::size_t count = settings_.instruments.empty()
+        ? 1 : settings_.instruments.size() + 1;
+    if (static_cast<std::size_t>(index) >= count ||
+        static_cast<std::size_t>(index) >= items_.size()) return nullptr;
     return &items_[static_cast<std::size_t>(index)];
 }
 
@@ -273,6 +275,16 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
             item.sample_ = PriceSample(settings_.instruments[index].precision);
             if (settings_.showChange) item.sample_ += L" +00.00%";
             item.detail_ = L"等待行情";
+        }
+        // 已注册的空闲槽位也要清理，避免删除标的后继续显示原来的名称和价格。
+        for (std::size_t index = settings_.instruments.size(); index < kMaxInstruments; ++index)
+        {
+            PriceItem& item = items_[index + 1];
+            item.name_ = L"Crypto 行情（未配置槽位 " + std::to_wstring(index + 1) + L"）";
+            item.label_ = L"Crypto: ";
+            item.value_ = L"未配置";
+            item.sample_ = L"未配置";
+            item.detail_ = L"请在插件选项中添加标的";
         }
         UpdatePlaceholder();
         RebuildAggregate();

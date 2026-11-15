@@ -1,0 +1,65 @@
+#include "InstrumentValidation.h"
+
+#include <cmath>
+#include <cstdlib>
+#include <map>
+#include <utility>
+
+namespace cryptoprice
+{
+namespace
+{
+bool HasValidPrice(const Ticker& ticker, PriceType type, bool spot)
+{
+    const std::string& raw = spot || type == PriceType::Last ? ticker.lastPrice :
+        type == PriceType::Mark ? ticker.markPrice : ticker.indexPrice;
+    if (raw.empty()) return false;
+    char* end = nullptr;
+    const double value = std::strtod(raw.c_str(), &end);
+    return end != raw.c_str() && end == raw.c_str() + raw.size() &&
+        std::isfinite(value) && value > 0;
+}
+
+bool MatchesCategory(const Instrument& instrument)
+{
+    if (instrument.category == L"SPOT") return true;
+    const std::wstring quote = instrument.category == L"USDT-FUTURES" ? L"USDT" :
+        instrument.category == L"USDC-FUTURES" ? L"USDC" :
+        instrument.category == L"COIN-FUTURES" ? L"USD" : L"";
+    return !quote.empty() && instrument.symbol.size() > quote.size() &&
+        instrument.symbol.compare(instrument.symbol.size() - quote.size(), quote.size(), quote) == 0;
+}
+}
+
+std::wstring ValidateInstruments(const Settings& settings, const CategoryFetcher& fetch)
+{
+    std::map<std::wstring, std::unordered_map<std::string, Ticker>> categories;
+    for (const Instrument& instrument : settings.instruments)
+    {
+        const std::wstring prefix = std::wstring(DataSourceName(settings.dataSource)) + L" / " +
+            instrument.category + L" / " + FormatInstrumentSymbol(instrument) + L"：";
+        if (!IsValidSymbol(instrument.symbol) || !MatchesCategory(instrument))
+            return prefix + L"交易对与市场类型不匹配，请检查后重试。";
+
+        auto category = categories.find(instrument.category);
+        if (category == categories.end())
+        {
+            std::unordered_map<std::string, Ticker> tickers;
+            std::wstring error;
+            if (!fetch(settings.dataSource, instrument.category, settings.priceType, tickers, error))
+                return prefix + L"行情查询失败，无法验证，请稍后重试。" + error;
+            category = categories.emplace(instrument.category, std::move(tickers)).first;
+        }
+        std::string symbol;
+        symbol.reserve(instrument.symbol.size());
+        for (const wchar_t character : instrument.symbol)
+            symbol.push_back(static_cast<char>(character)); // IsValidSymbol 已确保为 ASCII。
+        const auto ticker = category->second.find(symbol);
+        if (ticker == category->second.end())
+            return prefix + L"未找到该标的，请检查交易对、市场类型和数据源。";
+        if (!HasValidPrice(ticker->second, settings.priceType, instrument.category == L"SPOT"))
+            return prefix + L"无法取得有效的所选价格，不允许添加或保存。";
+    }
+    return {};
+}
+} // namespace cryptoprice

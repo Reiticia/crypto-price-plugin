@@ -32,7 +32,8 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 | `src/MarketClient.*` | 通用 HTTP 客户端及三家交易所适配 |
 | `src/Json.*` | Bitget、OKX、Binance 响应解析和符号规范化 |
 | `src/Config.*` | 数据源、标的、价格类型及 INI 持久化 |
-| `src/OptionsWindow.*` | 纯 Win32 设置窗口 |
+| `src/OptionsWindow.*` | 纯 Win32 设置窗口、后台标的校验及提交控制 |
+| `src/InstrumentValidation.*` | 按市场分组查询并校验标的和所选价格，可注入查询函数离线测试 |
 | `tests/Tests.cpp` | 三家响应解析和配置单元测试 |
 | `tests/PluginSmoke.cpp` | DLL ABI 和实时行情测试 |
 | `tests/fixtures*` | Bitget、OKX、Binance 配置样本 |
@@ -56,6 +57,8 @@ TrafficMonitor::DataRequired
 ```
 
 设置变化时 generation 递增。旧设置启动的迟到响应会被丢弃，避免切换数据源后短暂显示上一家交易所的数据。
+
+设置窗口添加或更新标的时，通过后台任务按当前数据源、市场类型和价格类型查询行情。只有标的存在且所选价格为有限正数时才修改草稿；现货始终验证最新价。点击确定时重新校验完整列表，同一市场只查询一次，避免切换数据源或价格类型后绕过校验。查询失败不提交设置；校验期间禁用编辑和重复提交，取消时丢弃结果并等待后台请求结束后安全关闭窗口。
 
 ## 5. 统一数据模型
 
@@ -135,10 +138,11 @@ USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` �
 ## 7. 显示项规则
 
 - `GetItem(0)` 是汇总项，ID 为 `CryptoPrice0`。
-- `GetItem(1..N)` 是各标的独立项，ID 为 `CryptoPriceItem0..15`。
+- `GetItem(1..N)` 是各标的独立项，ID 使用 `CryptoPriceItem0..15`；未配置槽位不会注册。
+- TrafficMonitor 只在加载插件时枚举一次显示项，且没有动态增删显示项的插件接口。因此运行期间修改标的数量后，需要重启 TrafficMonitor 才能让“显示设置”的项目数量同步。
 - 汇总项标签会随数据源显示为 `Bitget:`、`OKX:` 或 `Binance:`。
 - `GetItemValueText()` 只返回缓存，不能访问网络。
-- 没有配置标的时仍返回占位项。
+- 没有配置标的时汇总项仍返回占位内容。
 
 ## 8. 配置文件
 

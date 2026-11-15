@@ -50,6 +50,7 @@ int wmain(int argumentCount, wchar_t** arguments)
         }
         plugin->OnExtenedInfo(ITMPlugin::EI_CONFIG_DIR, arguments[index]);
         const std::wstring aggregate = plugin->GetItem(0)->GetItemValueText();
+        // 只暴露已配置的独立项，避免显示设置中出现空槽位。
         valid = plugin->GetItem(1) && plugin->GetItem(2) && !plugin->GetItem(3) &&
                 !plugin->GetItem(0)->IsCustomDraw() &&
                 plugin->GetItem(1)->IsCustomDraw() && plugin->GetItem(2)->IsCustomDraw() &&

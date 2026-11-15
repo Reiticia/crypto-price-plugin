@@ -75,7 +75,9 @@ OKX: BTCUSDT 79800.10 +2.26% | ETH/USDT 3210.25 -0.14%
 ## 5. 显示项 ID
 
 显示项 ID 为 `CryptoPrice0`（汇总项）和 `CryptoPriceItem0..15`（独立项）。TrafficMonitor
-在“显示设置”中按 ID 保存勾选状态；更换 ID 后需要重新勾选要显示的项。
+在“显示设置”中按 ID 保存勾选状态；更换 ID 后需要重新勾选要显示的项。插件只注册
+当前已配置的标的，不显示空槽位。由于 TrafficMonitor 仅在启动时枚举插件显示项，运行期间
+增删标的后需要重启 TrafficMonitor，才能同步“显示设置”中的项目数量。
 
 ## 6. 配置文件
 

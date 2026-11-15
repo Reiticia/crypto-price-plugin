@@ -8,6 +8,7 @@ endif()
 
 add_library(CryptoPrice SHARED
     src/MarketClient.cpp
+    src/InstrumentValidation.cpp
     src/CryptoPricePlugin.cpp
     src/Config.cpp
     src/Json.cpp
@@ -36,6 +37,7 @@ include(CTest)
 if(BUILD_TESTING)
     add_executable(CryptoPriceTests
         tests/Tests.cpp
+        src/InstrumentValidation.cpp
         src/Config.cpp
         src/Json.cpp
     )

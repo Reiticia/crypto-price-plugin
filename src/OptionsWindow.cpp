@@ -1,11 +1,14 @@
 #include "OptionsWindow.h"
 
 #include "Module.h"
+#include "InstrumentValidation.h"
+#include "MarketClient.h"
 
 #include <CommCtrl.h>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cwchar>
 #include <string>
 
@@ -26,6 +29,7 @@ constexpr int kStatus = 1009;
 constexpr int kUpdate = 1010;
 constexpr int kDataSource = 1011;
 constexpr int kPrecision = 1012;
+constexpr UINT_PTR kValidationTimer = 1;
 
 HWND AddControl(HWND parent, const wchar_t* className, const wchar_t* text,
                 DWORD style, int x, int y, int width, int height, int id)
@@ -152,7 +156,15 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
     case WM_CREATE:
         CreateControls();
         return 0;
+    case WM_TIMER:
+        if (wParam == kValidationTimer) FinishValidation();
+        return 0;
     case WM_COMMAND:
+        if (validation_.valid())
+        {
+            if (LOWORD(wParam) == IDCANCEL) RequestClose();
+            return 0;
+        }
         switch (LOWORD(wParam))
         {
         case kList:
@@ -162,12 +174,12 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case kUpdate: UpdateSelected(); return 0;
         case kRemove: RemoveSelected(); return 0;
         case IDOK: Accept(); return 0;
-        case IDCANCEL: DestroyWindow(window_); return 0;
+        case IDCANCEL: RequestClose(); return 0;
         default: break;
         }
         break;
     case WM_CLOSE:
-        DestroyWindow(window_);
+        RequestClose();
         return 0;
     case WM_DESTROY:
         window_ = nullptr;
@@ -332,9 +344,7 @@ void OptionsWindow::AddNew()
         MessageBeep(MB_ICONWARNING);
         return;
     }
-    draft_.instruments.push_back(std::move(instrument));
-    RefreshList(static_cast<int>(draft_.instruments.size() - 1));
-    SetStatus(L"新标的已添加；点击“确定”后写入配置并立即刷新。 ");
+    BeginValidation(&instrument, -1, false);
 }
 
 void OptionsWindow::UpdateSelected()
@@ -367,9 +377,7 @@ void OptionsWindow::UpdateSelected()
         MessageBeep(MB_ICONWARNING);
         return;
     }
-    draft_.instruments[static_cast<std::size_t>(selected)] = std::move(instrument);
-    RefreshList(selected);
-    SetStatus(L"列表已更新；点击“确定”后写入配置并立即刷新。 ");
+    BeginValidation(&instrument, selected, false);
 }
 
 void OptionsWindow::RemoveSelected()
@@ -403,13 +411,105 @@ void OptionsWindow::Accept()
         return;
     }
     draft_.refreshSeconds = static_cast<int>(seconds);
+    BeginValidation(nullptr, SelectedIndex(), true);
+}
+
+void OptionsWindow::BeginValidation(const Instrument* instrument, int selection, bool accept)
+{
+    pendingSettings_ = draft_;
     const int price = static_cast<int>(SendMessageW(priceType_, CB_GETCURSEL, 0, 0));
-    draft_.priceType = price == 1 ? PriceType::Mark : price == 2 ? PriceType::Index : PriceType::Last;
+    pendingSettings_.priceType = price == 1 ? PriceType::Mark : price == 2 ? PriceType::Index : PriceType::Last;
     const int source = static_cast<int>(SendMessageW(dataSource_, CB_GETCURSEL, 0, 0));
-    draft_.dataSource = source == 1 ? DataSource::Okx :
-                        source == 2 ? DataSource::Binance : DataSource::Bitget;
-    draft_.showChange = SendMessageW(showChange_, BM_GETCHECK, 0, 0) == BST_CHECKED;
-    accepted_ = true;
+    pendingSettings_.dataSource = source == 1 ? DataSource::Okx :
+                                  source == 2 ? DataSource::Binance : DataSource::Bitget;
+    pendingSettings_.showChange = SendMessageW(showChange_, BM_GETCHECK, 0, 0) == BST_CHECKED;
+    if (instrument)
+    {
+        if (selection < 0)
+        {
+            selection = static_cast<int>(pendingSettings_.instruments.size());
+            pendingSettings_.instruments.push_back(*instrument);
+        }
+        else
+            pendingSettings_.instruments[static_cast<std::size_t>(selection)] = *instrument;
+    }
+    Settings validationSettings = pendingSettings_;
+    if (instrument) validationSettings.instruments = {*instrument};
+    pendingSelection_ = selection;
+    pendingAccept_ = accept;
+    if (!SetTimer(window_, kValidationTimer, 100, nullptr))
+    {
+        SetStatus(L"无法启动标的校验，请重试。");
+        return;
+    }
+    try
+    {
+        validation_ = std::async(std::launch::async, [settings = std::move(validationSettings)] {
+            MarketClient client;
+            return ValidateInstruments(settings,
+                [&client](DataSource dataSource, const std::wstring& category, PriceType priceType,
+                          std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) {
+                    return client.FetchCategory(dataSource, category, priceType, tickers, error);
+                });
+        });
+    }
+    catch (...)
+    {
+        KillTimer(window_, kValidationTimer);
+        SetStatus(L"无法启动标的校验，请重试。");
+        return;
+    }
+    SetValidationBusy(true);
+    SetStatus(L"正在查询并校验标的价格，请稍候……");
+}
+
+void OptionsWindow::FinishValidation()
+{
+    if (!validation_.valid() ||
+        validation_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    KillTimer(window_, kValidationTimer);
+    std::wstring error;
+    try { error = validation_.get(); }
+    catch (...) { error = L"标的校验失败，未应用更改，请稍后重试。"; }
+    SetValidationBusy(false);
+    if (closeRequested_)
+    {
+        DestroyWindow(window_);
+        return;
+    }
+    if (!error.empty())
+    {
+        SetStatus(L"校验未通过，未应用更改。请查看提示并重试。");
+        MessageBoxW(window_, error.c_str(), L"标的校验失败", MB_OK | MB_ICONWARNING);
+        return;
+    }
+    draft_ = std::move(pendingSettings_);
+    if (pendingAccept_)
+    {
+        accepted_ = true;
+        DestroyWindow(window_);
+        return;
+    }
+    RefreshList(pendingSelection_);
+    SetStatus(L"标的价格校验通过，列表已更新；点击“确定”后保存。");
+}
+
+void OptionsWindow::SetValidationBusy(bool busy)
+{
+    for (int id : {kList, kSymbol, kCategory, kAdd, kRemove, kPriceType, kRefresh,
+                   kShowChange, kUpdate, kDataSource, kPrecision, IDOK})
+        EnableWindow(GetDlgItem(window_, id), !busy);
+}
+
+void OptionsWindow::RequestClose()
+{
+    if (validation_.valid())
+    {
+        // 保持消息循环运行，待后台请求结束后安全销毁；不提交校验结果。
+        closeRequested_ = true;
+        SetStatus(L"已取消更改，正在等待行情查询结束后关闭……");
+        return;
+    }
     DestroyWindow(window_);
 }
 

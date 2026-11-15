@@ -11,6 +11,10 @@
 - 配置格式调整：`[General] DisplayPrecision` 移除，改为每个 `[InstrumentN]` 段
   下的 `Precision` 键（缺省或脏值回退 -1 自动推断）
 
+### 变更
+
+- 仅向 TrafficMonitor 注册已配置的标的，不再在“显示设置”中显示未配置或预留槽位
+
 ## [2.0.1] - 2026-08-27
 
 ### 新增

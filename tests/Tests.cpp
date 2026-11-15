@@ -1,5 +1,6 @@
 #include "Config.h"
 #include "Json.h"
+#include "InstrumentValidation.h"
 
 #include <Windows.h>
 
@@ -21,6 +22,86 @@ void Check(bool condition, const char* message)
         std::cerr << "FAILED: " << message << '\n';
         ++failures;
     }
+}
+
+void TestInstrumentValidation()
+{
+    using namespace cryptoprice;
+    Settings settings;
+    settings.instruments = {{L"USDT-FUTURES", L"BTCUSDT"}, {L"USDT-FUTURES", L"ETHUSDT"}};
+    std::unordered_map<std::string, Ticker> quotes;
+    quotes["BTCUSDT"].lastPrice = "80000.12";
+    quotes["BTCUSDT"].markPrice = "80001";
+    quotes["BTCUSDT"].indexPrice = "80002";
+    quotes["ETHUSDT"].lastPrice = "3000";
+    quotes["ETHUSDT"].markPrice = "3001";
+    quotes["ETHUSDT"].indexPrice = "3002";
+    int calls = 0;
+    bool networkSuccess = true;
+    CategoryFetcher fetch = [&](DataSource source, const std::wstring& category, PriceType type,
+                                std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) {
+        ++calls;
+        Check(source == settings.dataSource, "validate selected data source");
+        Check(type == settings.priceType, "validate selected price type");
+        Check(!category.empty(), "validate selected category");
+        tickers = quotes;
+        error = networkSuccess ? L"" : L"network unavailable";
+        return networkSuccess;
+    };
+    for (DataSource source : {DataSource::Bitget, DataSource::Okx, DataSource::Binance})
+    {
+        settings.dataSource = source;
+        for (PriceType type : {PriceType::Last, PriceType::Mark, PriceType::Index})
+        {
+            settings.priceType = type;
+            calls = 0;
+            Check(ValidateInstruments(settings, fetch).empty(), "accept queryable price for each source/type");
+            Check(calls == 1, "fetch each category once per validation");
+        }
+    }
+    settings.priceType = PriceType::Last;
+    settings.instruments[1].symbol = L"NOTEXISTUSDT";
+    Check(ValidateInstruments(settings, fetch).find(L"NOTEXISTUSDT") != std::wstring::npos,
+          "reject missing symbol and identify it in error");
+    settings.instruments.resize(1);
+    networkSuccess = false;
+    Check(ValidateInstruments(settings, fetch).find(L"network unavailable") != std::wstring::npos,
+          "reject query failure, even when callback returned tickers");
+    networkSuccess = true;
+    for (const std::string raw : {"", "abc", "12oops", "nan", "inf", "1e999", "0", "-1"})
+    {
+        quotes["BTCUSDT"].lastPrice = raw;
+        Check(!ValidateInstruments(settings, fetch).empty(), "reject missing, malformed or nonpositive price");
+    }
+    quotes["BTCUSDT"].lastPrice = std::string("12\0oops", 7);
+    Check(!ValidateInstruments(settings, fetch).empty(), "reject embedded NUL in price");
+    quotes["BTCUSDT"].lastPrice = "0.00000001";
+    Check(ValidateInstruments(settings, fetch).empty(), "accept low positive price");
+    settings.priceType = PriceType::Mark;
+    quotes["BTCUSDT"].markPrice.clear();
+    Check(!ValidateInstruments(settings, fetch).empty(), "do not fall back to last when mark is missing");
+    settings.priceType = PriceType::Index;
+    quotes["BTCUSDT"].indexPrice.clear();
+    Check(!ValidateInstruments(settings, fetch).empty(), "do not fall back to last when index is missing");
+    settings.instruments[0].category = L"SPOT";
+    Check(ValidateInstruments(settings, fetch).empty(), "spot uses last even when index selected");
+    settings.priceType = PriceType::Mark;
+    Check(ValidateInstruments(settings, fetch).empty(), "spot uses last even when mark selected");
+    settings.instruments[0].category = L"USDC-FUTURES";
+    Check(!ValidateInstruments(settings, fetch).empty(), "reject wrong futures category despite broad API response");
+    settings.instruments[0] = {L"COIN-FUTURES", L"BTCUSD"};
+    quotes["BTCUSD"].markPrice = "80000";
+    Check(ValidateInstruments(settings, fetch).empty(), "accept coin margined price");
+    settings.instruments[0] = {L"USDC-FUTURES", L"BTCUSDC"};
+    quotes["BTCUSDC"].markPrice = "80000";
+    settings.instruments.push_back({L"SPOT", L"BTCUSDT"});
+    calls = 0;
+    Check(ValidateInstruments(settings, fetch).empty() && calls == 2, "validate mixed categories separately");
+    settings.instruments[0].symbol = L"BAD$SYMBOL";
+    Check(!ValidateInstruments(settings, fetch).empty(), "reject invalid symbol without trusting quotes");
+    settings.instruments.clear();
+    calls = 0;
+    Check(ValidateInstruments(settings, fetch).empty() && calls == 0, "empty list can save without network");
 }
 }
 
@@ -149,6 +230,8 @@ int main()
         true, tickers, error), "parse Binance coin futures");
     Check(tickers.size() == 1 && tickers.count("BTCUSD") == 1,
           "keep Binance coin perpetual and normalize symbol");
+
+    TestInstrumentValidation();
 
     if (failures == 0) std::cout << "All tests passed\n";
     return failures == 0 ? 0 : 1;

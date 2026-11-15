@@ -4,6 +4,7 @@
 
 #include <Windows.h>
 
+#include <future>
 #include <utility>
 
 namespace cryptoprice
@@ -26,6 +27,10 @@ private:
     void UpdateSelected();
     void RemoveSelected();
     void Accept();
+    void BeginValidation(const Instrument* instrument, int selection, bool accept);
+    void FinishValidation();
+    void SetValidationBusy(bool busy);
+    void RequestClose();
     Instrument ReadInstrument() const;
     int ReadPrecisionInput() const;
     int SelectedIndex() const;
@@ -43,5 +48,10 @@ private:
     HWND showChange_{};
     HWND status_{};
     bool accepted_{};
+    std::future<std::wstring> validation_;
+    Settings pendingSettings_;
+    int pendingSelection_{-1};
+    bool pendingAccept_{};
+    bool closeRequested_{};
 };
 } // namespace cryptoprice
