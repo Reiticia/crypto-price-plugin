@@ -53,10 +53,14 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 ```
 
 不再 REST 轮询价格。`RefreshSeconds` 只节流 UI 消费缓存，网络推送持续接收。
+新错误或错误内容变化只立即更新对应标的，不刷新其他成功报价，也不推迟原显示期限；
+重复错误不绕过显示间隔，待显示报价在期限到达时仍可消费。缺失快照告警每连接每标的只发布一次。
 断线立即清空旧价；新连接独立缓存，Bybit 快照前的 delta 被忽略。每 15 秒发心跳，
 75 秒无应用帧或 30 秒未取得任何标的更新则重连；安静／休市时用心跳确认存活。
 重连按 1、2、4…30 秒退避，取价成功后复位，不退回 REST。设置变化递增 generation
 并取消旧 session，停止回调与发布互斥，不在 UI 线程等待网络。
+守卫通过 `WinHttpWebSocketClose` 取消阻塞接收，关闭握手最多等待 1 秒；接收返回且守卫退出后，
+才由持有者释放 WebSocket 句柄，禁止并发 `WinHttpCloseHandle` 与接收调用。
 
 `StreamProtocol` 生成订阅并合并字段；`StreamClient` 使用 WinHTTP WebSocket，处理 UTF-8
 分片、2MB 消息上限、服务端关闭、订阅错误及重订阅。首次网络启动前 pin DLL；单例

@@ -20,15 +20,17 @@
 | `CryptoPriceTests` | 否 | 配置、显示格式、三家 JSON 解析及标的价格有效性校验 |
 | `CryptoPriceSmoke` | 否 | DLL、API v7、混合现货/合约显示项 |
 | `CryptoPriceNoChangeWidthSmoke` | 否 | 隐藏涨跌幅时汇总项和独立项的宽度示例不含百分比 |
-| `CryptoPriceStreamTests` | 否 | 五家 WSS 订阅、Bybit 快照／delta、频道合并、错误、重连空缓存、股票映射 |
+| `CryptoPriceStreamTests` | 否 | 五家 WSS 订阅、Bybit 快照／delta、频道合并、错误、重连空缓存、股票映射、缺失快照告警去重 |
 | `CryptoPriceStreamLifecycleTests` | 否 | 无网络场景的停止、旧回调隔离、配置代次切换、析构与关闭状态 |
+| `CryptoPriceStreamDisplayTests` | 否 | 混合成功／失败标的的 300 秒节流、错误即时清价、待显示报价保留、generation 隔离 |
+| `CryptoPriceStreamSocketTests` | 仅本机回环 | 真实 WinHTTP 阻塞接收取消、关闭握手超时、重复取消和取消后的收发保护 |
 | `CryptoPriceExchangeTests` | 否 | Kraken 现货元数据与数字型永续、Bybit 结算币／交割过滤、API 错误和分页解析 |
 | `CryptoPriceOptionsSourceTests` | 否 | 数据源位于独立区、选中加载各自来源、美股锁定 Kraken、取消不提交 |
 | `CryptoPriceMixedSourceSmoke` | 否 | 混合 Binance/OKX 来源正确，任务栏标签、值与示例不含交易所，汇总标签为“行情” |
 | `CryptoPriceStockSmoke` | 否 | 美股 USD 标签、Kraken 数据源名称、无涨跌幅占位 |
 | `CryptoPriceSmoke --live` | 是 | 指定数据源的真实合约和现货行情 |
 
-默认 CTest 不执行联网测试，避免网络波动造成误报。
+默认 CTest 不访问外部网络，避免网络波动造成误报；Socket 测试仅使用本机回环临时端口。
 
 ## 3. 构建与离线测试
 
@@ -48,7 +50,7 @@ cmake --build --preset win32-release
 ctest --preset win32-release
 ```
 
-九个离线测试都应显示 `Passed`。
+十一个离线测试都应显示 `Passed`。
 
 ## 4. 解析测试范围
 

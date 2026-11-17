@@ -314,28 +314,49 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
 
 void CryptoPricePlugin::ApplyPendingResult()
 {
+    std::lock_guard<std::mutex> refreshLock(refreshMutex_);
     const auto now = std::chrono::steady_clock::now();
+    const bool fullRefresh = now >= nextRefresh_;
     PendingResult result;
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
         if (!hasPending_) return;
-        // Connection errors invalidate cached prices immediately, even with a
-        // long display interval. Successful price updates remain UI-throttled.
-        const bool connectionError = std::any_of(pending_.quotes.begin(), pending_.quotes.end(),
-            [](const QuoteResult& quote) { return !quote.success; });
-        if (now < nextRefresh_ && !connectionError) return;
+        // Only a new/changed error bypasses the interval, and only for its own
+        // item. Keep successful quotes pending until the original deadline.
+        const bool urgentError = std::any_of(pending_.quotes.begin(), pending_.quotes.end(),
+            [](const QuoteResult& quote) { return quote.urgentError; });
+        if (!fullRefresh && !urgentError) return;
         result = pending_;
-        hasPending_ = false;
+        for (auto& quote : pending_.quotes) quote.urgentError = false;
+        if (fullRefresh) hasPending_ = false;
     }
     if (result.generation != generation_.load()) return;
-    nextRefresh_ = now + std::chrono::seconds(settings_.refreshSeconds);
 
     std::lock_guard<std::mutex> lock(settingsMutex_);
+    if (fullRefresh) nextRefresh_ = now + std::chrono::seconds(settings_.refreshSeconds);
     const std::size_t count = (std::min)(result.quotes.size(), settings_.instruments.size());
     for (std::size_t index = 0; index < count; ++index)
-        UpdateItem(index, result.quotes[index], settings_);
+        if (fullRefresh || result.quotes[index].urgentError)
+            UpdateItem(index, result.quotes[index], settings_);
     RebuildAggregate();
     RebuildTooltip(settings_.instruments.size());
+}
+
+void CryptoPricePlugin::QueueStreamQuotes(unsigned long long generation, const std::vector<StreamQuote>& updates)
+{
+    std::lock_guard<std::mutex> lock(pendingMutex_);
+    if (generation != generation_.load() || pending_.generation != generation) return;
+    for (const auto& update : updates)
+    {
+        if (update.index >= pending_.quotes.size()) continue;
+        auto& quote = pending_.quotes[update.index];
+        quote.urgentError = !update.success &&
+            (quote.urgentError || quote.success || quote.error != update.error);
+        quote.success = update.success;
+        quote.ticker = update.ticker;
+        quote.error = update.error;
+    }
+    hasPending_ = true;
 }
 
 void CryptoPricePlugin::StartRefresh(bool force)
@@ -360,17 +381,7 @@ void CryptoPricePlugin::StartRefresh(bool force)
     try
     {
         streams_.Start(snapshot, generation, [this](unsigned long long g, const std::vector<StreamQuote>& updates) {
-            std::lock_guard<std::mutex> lock(pendingMutex_);
-            if (g != generation_.load() || pending_.generation != g) return;
-            for (const auto& update : updates)
-            {
-                if (update.index >= pending_.quotes.size()) continue;
-                auto& quote = pending_.quotes[update.index];
-                quote.success = update.success;
-                quote.ticker = update.ticker;
-                quote.error = update.error;
-            }
-            hasPending_ = true;
+            QueueStreamQuotes(g, updates);
         });
         streamStarted_ = true;
     }

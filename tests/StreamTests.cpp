@@ -1,4 +1,5 @@
 #include "StreamProtocol.h"
+#include "StreamSnapshots.h"
 #include <cmath>
 #include <iostream>
 
@@ -86,5 +87,20 @@ int main()
     rejected = false;
     try { ApplyStreamMessage(bybit, "{broken", cache); } catch (...) { rejected = true; }
     check(rejected, "malformed messages do not silently overwrite cache");
+    StreamSnapshots snapshots;
+    const std::vector<std::size_t> indexes{2, 5, 9};
+    snapshots.Observe(2);
+    check(snapshots.Missing(indexes, std::chrono::seconds(30)).empty(), "missing snapshot grace period");
+    snapshots.Observe(5); // A snapshot in the timeout-crossing frame is processed before warning.
+    check(snapshots.Missing(indexes, std::chrono::seconds(31)) == std::vector<std::size_t>{9},
+          "only actually missing indexes are warned");
+    check(snapshots.Missing(indexes, std::chrono::seconds(32)).empty() &&
+          snapshots.Missing(indexes, std::chrono::seconds(90)).empty(),
+          "repeated heartbeat and price frames do not repeat missing warnings");
+    snapshots.Observe(9);
+    check(snapshots.Missing(indexes, std::chrono::seconds(91)).empty(), "late snapshot resolves missing instrument");
+    StreamSnapshots reconnected;
+    check(reconnected.Missing(indexes, std::chrono::seconds(31)) == indexes,
+          "new connection resets both seen and warned indexes");
     return failures ? 1 : 0;
 }

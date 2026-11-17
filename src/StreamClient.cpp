@@ -1,5 +1,7 @@
 #include "StreamClient.h"
 #include "StreamProtocol.h"
+#include "StreamSnapshots.h"
+#include "StreamSocket.h"
 #include "MarketClient.h"
 #include "Module.h"
 
@@ -10,7 +12,6 @@
 #include <condition_variable>
 #include <map>
 #include <stdexcept>
-#include <set>
 #include <thread>
 
 namespace cryptoprice
@@ -37,26 +38,6 @@ std::runtime_error NetworkError(const char* operation)
 {
     return std::runtime_error(std::string(operation) + ": Windows error " + std::to_string(GetLastError()));
 }
-struct Socket
-{
-    std::mutex mutex;
-    HINTERNET value{};
-    void Close()
-    {
-        std::lock_guard<std::mutex> lock(mutex);
-        if (value) { WinHttpCloseHandle(value); value = nullptr; }
-    }
-    void Send(const std::string& text)
-    {
-        if (text.empty()) return;
-        std::lock_guard<std::mutex> lock(mutex);
-        if (!value) throw std::runtime_error("WebSocket closed");
-        const DWORD error = WinHttpWebSocketSend(value, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE,
-                                                const_cast<char*>(text.data()), static_cast<DWORD>(text.size()));
-        if (error != NO_ERROR) throw std::runtime_error("WebSocket send error " + std::to_string(error));
-    }
-    ~Socket() { Close(); }
-};
 }
 struct StreamClient::Session : std::enable_shared_from_this<Session>
 {
@@ -143,12 +124,13 @@ struct StreamClient::Session : std::enable_shared_from_this<Session>
         if (!WinHttpQueryHeaders(request.value, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
                                  nullptr, &status, &size, nullptr) || status != 101)
             throw std::runtime_error("WebSocket HTTP " + std::to_string(status));
-        Socket socket;
-        socket.value = WinHttpWebSocketCompleteUpgrade(request.value, 0);
-        if (!socket.value) throw NetworkError("WebSocket complete upgrade");
-        const HINTERNET receiveSocket = socket.value;
+        StreamSocket socket(WinHttpWebSocketCompleteUpgrade(request.value, 0));
+        if (!socket.Get()) throw NetworkError("WebSocket complete upgrade");
         DWORD keepalive = 30000;
-        WinHttpSetOption(receiveSocket, WINHTTP_OPTION_WEB_SOCKET_KEEPALIVE_INTERVAL, &keepalive, sizeof(keepalive));
+        WinHttpSetOption(socket.Get(), WINHTTP_OPTION_WEB_SOCKET_KEEPALIVE_INTERVAL, &keepalive, sizeof(keepalive));
+        DWORD closeTimeout = 1000;
+        if (!WinHttpSetOption(socket.Get(), WINHTTP_OPTION_WEB_SOCKET_CLOSE_TIMEOUT, &closeTimeout, sizeof(closeTimeout)))
+            throw NetworkError("WebSocket close timeout");
         for (const auto& subscription : plan.subscriptions) socket.Send(subscription);
         std::map<std::string, Ticker> cache;
         // Transport traffic (including heartbeats) proves connection liveness;
@@ -167,20 +149,22 @@ struct StreamClient::Session : std::enable_shared_from_this<Session>
                 guardWake.wait_for(lock, std::chrono::milliseconds(100));
                 const auto now = GetTickCount64();
                 if (Stopped() || now - lastFrame.load() > 75000 || (!firstQuote.load() && now - connectedAt > 30000))
-                { socket.Close(); break; }
+                { socket.Interrupt(); break; }
                 if (now - lastPing >= 15000)
                 {
                     try { socket.Send(plan.heartbeat); }
-                    catch (...) { socket.Close(); break; }
+                    catch (...) { socket.Interrupt(); break; }
                     lastPing = now;
                 }
             }
         });
         const auto finish = [&] {
-            finished.store(true); guardWake.notify_all(); socket.Close();
+            finished.store(true); guardWake.notify_all();
             if (guard.joinable()) guard.join();
+            // Receive has returned and the guard can no longer send/close.
+            // Only the socket destructor may now release the handle.
         };
-        std::set<std::string> seen;
+        StreamSnapshots snapshots;
         try
         {
             std::string message;
@@ -189,7 +173,7 @@ struct StreamClient::Session : std::enable_shared_from_this<Session>
             {
                 DWORD bytes{};
                 WINHTTP_WEB_SOCKET_BUFFER_TYPE type{};
-                const DWORD result = WinHttpWebSocketReceive(receiveSocket, buffer, sizeof(buffer), &bytes, &type);
+                const DWORD result = socket.Receive(buffer, sizeof(buffer), bytes, type);
                 if (result != NO_ERROR) throw std::runtime_error("WebSocket receive error " + std::to_string(result));
                 if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE) throw std::runtime_error("WebSocket peer closed");
                 lastFrame.store(GetTickCount64());
@@ -200,27 +184,30 @@ struct StreamClient::Session : std::enable_shared_from_this<Session>
                 if (type == WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE) continue;
                 const auto changed = ApplyStreamMessage(plan, message, cache);
                 message.clear();
-                if (GetTickCount64() - connectedAt > 30000)
+                if (!changed.empty())
                 {
-                    std::vector<StreamQuote> missing;
-                    for (auto index : indexes)
-                        if (!seen.count(WideToAscii(instrumentsFor(index))))
-                            missing.push_back({index, false, {}, L"已连接但尚未收到该标的快照，请检查订阅／市场状态"});
-                    if (!missing.empty()) Publish(missing);
+                    firstQuote.store(true);
+                    backoff = 1;
                 }
-                if (changed.empty()) continue;
-                firstQuote.store(true);
-                backoff = 1;
                 std::vector<StreamQuote> updates;
                 for (std::size_t i = 0; i < indexes.size(); ++i)
                 {
                     const auto key = WideToAscii(instrumentsFor(indexes[i]));
                     if (std::find(changed.begin(), changed.end(), key) == changed.end()) continue;
                     const auto found = cache.find(key);
-                    seen.insert(key);
-                    if (found != cache.end()) updates.push_back({indexes[i], true, found->second, {}});
+                    if (found != cache.end())
+                    {
+                        snapshots.Observe(indexes[i]);
+                        updates.push_back({indexes[i], true, found->second, {}});
+                    }
                 }
                 if (!updates.empty()) Publish(updates);
+                // Process this frame's snapshots first, then warn once per
+                // missing instrument (including on heartbeat-only frames).
+                std::vector<StreamQuote> missing;
+                for (auto index : snapshots.Missing(indexes, std::chrono::milliseconds(GetTickCount64() - connectedAt)))
+                    missing.push_back({index, false, {}, L"已连接但尚未收到该标的快照，请检查订阅／市场状态"});
+                if (!missing.empty()) Publish(missing);
             }
         }
         catch (...) { finish(); throw; }

@@ -64,12 +64,14 @@ public:
 
 private:
     friend class PriceItem;
+    friend struct CryptoPricePluginTestAccess;
     struct QuoteResult
     {
         Instrument instrument;
         bool success{};
         Ticker ticker;
         std::wstring error;
+        bool urgentError{};
     };
     struct PendingResult
     {
@@ -83,6 +85,7 @@ private:
 
     void ApplySettings(Settings settings);
     void ApplyPendingResult();
+    void QueueStreamQuotes(unsigned long long generation, const std::vector<StreamQuote>& updates);
     void StartRefresh(bool force);
     void UpdatePlaceholder();
     void UpdateItem(std::size_t index, const QuoteResult& result, const Settings& settings);
