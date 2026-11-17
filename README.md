@@ -65,9 +65,11 @@ ctest --test-dir build-win32 -C Release --output-on-failure
 
 - 推送 `vX.Y.Z` Tag 时，工作流会验证 Tag 与 `CMakeLists.txt` 版本一致，构建并测试
   x64、Win32，从 `CHANGELOG.md` 提取对应版本章节作为 Release 说明，随后创建 GitHub
-  Release，附带两个 DLL 和 SHA-256 校验文件；
+  Release，附带 `CryptoPrice-x64.zip`、`CryptoPrice-win32.zip` 和压缩包的 SHA-256 校验文件；
 - 在 Actions 页面手动运行时，只构建并测试 x64、Win32，不创建 Release。两个 DLL 作为
-  Workflow Artifacts 保留 14 天，可从该次运行页面下载。
+  Workflow Artifacts（`CryptoPrice-x64`、`CryptoPrice-win32`）保留 14 天，可从该次运行页面下载。
+
+所有压缩包和构建产物中的 DLL 均固定命名为 `CryptoPrice.dll`，不附加版本号、提交号或架构。
 
 ## 安装和使用
 

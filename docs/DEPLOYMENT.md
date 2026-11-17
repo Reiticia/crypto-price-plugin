@@ -42,14 +42,16 @@ cmake --build build-win32 --config Release
 ctest --test-dir build-win32 -C Release --output-on-failure
 ```
 
-建议发布包命名：
+工作流按架构生成发布压缩包：
 
 ```text
-CryptoPrice-2.0.0-x64.dll
-CryptoPrice-2.0.0-win32.dll
+CryptoPrice-x64.zip
+CryptoPrice-win32.zip
 ```
 
-安装时文件名使用 `CryptoPrice.dll`。发布前记录哈希：
+每个压缩包内只包含 `CryptoPrice.dll`，DLL 文件名不附加版本号、提交号或架构。
+选择与 TrafficMonitor 架构一致的压缩包，解压后直接安装，无需重命名。Release 中的
+`SHA256SUMS.txt` 记录两个压缩包的 SHA-256。手动发布前也可记录 DLL 哈希：
 
 ```powershell
 Get-FileHash .\build-x64\Release\CryptoPrice.dll -Algorithm SHA256

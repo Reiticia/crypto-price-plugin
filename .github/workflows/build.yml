@@ -42,8 +42,7 @@ jobs:
             $artifactVersion = $tagVersion
           }
           else {
-            $shortSha = $env:GITHUB_SHA.Substring(0, 7)
-            $artifactVersion = "$cmakeVersion-$shortSha"
+            $artifactVersion = $cmakeVersion
           }
 
           "artifact_version=$artifactVersion" >> $env:GITHUB_OUTPUT
@@ -84,14 +83,13 @@ jobs:
           }
 
           New-Item -ItemType Directory -Path dist -Force | Out-Null
-          $fileName = 'CryptoPrice-${{ needs.metadata.outputs.artifact_version }}-${{ matrix.label }}.dll'
-          Copy-Item -LiteralPath $source -Destination (Join-Path $PWD "dist/$fileName")
+          Copy-Item -LiteralPath $source -Destination (Join-Path $PWD 'dist/CryptoPrice.dll')
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: CryptoPrice-${{ matrix.label }}
-          path: dist/*.dll
+          path: dist/CryptoPrice.dll
           if-no-files-found: error
           retention-days: 14
 
@@ -108,18 +106,24 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download DLL artifacts
+      - name: Download DLL artifacts by architecture
         uses: actions/download-artifact@v4
         with:
           pattern: CryptoPrice-*
-          path: release-assets
-          merge-multiple: true
+          path: release-artifacts
+          merge-multiple: false
 
-      - name: Create SHA-256 checksums
+      - name: Package DLLs and create SHA-256 checksums
         shell: bash
         run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          for architecture in x64 win32; do
+            (cd "release-artifacts/CryptoPrice-$architecture" && \
+              zip "$GITHUB_WORKSPACE/release-assets/CryptoPrice-$architecture.zip" CryptoPrice.dll)
+          done
           cd release-assets
-          sha256sum ./*.dll > SHA256SUMS.txt
+          sha256sum ./*.zip > SHA256SUMS.txt
 
       - name: Extract release notes from CHANGELOG.md
         shell: pwsh
@@ -172,5 +176,5 @@ jobs:
           name: CryptoPrice ${{ github.ref_name }}
           body_path: release-notes.md
           files: |
-            release-assets/*.dll
+            release-assets/*.zip
             release-assets/SHA256SUMS.txt
