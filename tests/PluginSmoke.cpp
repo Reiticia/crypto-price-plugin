@@ -71,18 +71,27 @@ int wmain(int argumentCount, wchar_t** arguments)
                 aggregate.find(stocks ? L"AAPL/USD" : L"BTCUSDT") != std::wstring::npos &&
                 aggregate.find(stocks ? L"TSLA/USD" : L"ETH/USDT") != std::wstring::npos;
         if (valid && stocks)
-            valid = std::wstring(plugin->GetItem(0)->GetItemLableText()).find(L"Kraken") != std::wstring::npos &&
+            valid = std::wstring(plugin->GetItem(0)->GetItemLableText()) == L"行情: " &&
                     std::wstring(plugin->GetItem(1)->GetItemName()).find(L"Kraken xStocks") != std::wstring::npos;
     }
     if (valid && mixed)
         valid = std::wstring(plugin->GetItem(1)->GetItemName()).find(L"Binance") != std::wstring::npos &&
                 std::wstring(plugin->GetItem(2)->GetItemName()).find(L"OKX") != std::wstring::npos &&
-                std::wstring(plugin->GetItem(0)->GetItemLableText()).find(L"多源") != std::wstring::npos;
+                std::wstring(plugin->GetItem(0)->GetItemLableText()) == L"行情: ";
     if (valid && plugin->GetItem(1))
     {
         for (int index = 0; index < 3; ++index)
         {
             const std::wstring sample = plugin->GetItem(index)->GetItemValueSampleText();
+            const std::wstring label = plugin->GetItem(index)->GetItemLableText();
+            const std::wstring value = plugin->GetItem(index)->GetItemValueText();
+            for (const wchar_t* exchange : {L"Bitget", L"OKX", L"Binance", L"Kraken", L"Bybit", L"多源"})
+                if (label.find(exchange) != std::wstring::npos || value.find(exchange) != std::wstring::npos ||
+                    sample.find(exchange) != std::wstring::npos)
+                {
+                    std::cerr << "Taskbar text must not include exchange names\n";
+                    valid = false;
+                }
             const bool reservesChangeWidth = sample.find(L'%') != std::wstring::npos;
             if (reservesChangeWidth == expectNoChange)
             {

@@ -16,6 +16,10 @@ public:
                        std::wstring& error) const;
 
 private:
+    bool FetchKraken(const std::wstring& category,
+                     std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) const;
+    bool FetchBybit(const std::wstring& category,
+                    std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) const;
     bool FetchBitget(const std::wstring& category,
                      std::unordered_map<std::string, Ticker>& tickers,
                      std::wstring& error) const;

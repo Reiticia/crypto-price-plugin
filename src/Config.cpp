@@ -94,6 +94,20 @@ bool IsValidInstrumentSymbol(const Instrument& instrument)
         });
 }
 
+bool IsSupportedMarket(DataSource source, const std::wstring& category)
+{
+    if (category == L"US-STOCK") return source == DataSource::Kraken;
+    if (source == DataSource::Kraken) return category == L"SPOT" || category == L"USD-FUTURES";
+    return category == L"SPOT" || category == L"USDT-FUTURES" ||
+           category == L"USDC-FUTURES" || category == L"COIN-FUTURES";
+}
+
+bool Supports24HourChange(const Instrument& instrument)
+{
+    return instrument.category != L"US-STOCK" &&
+        !(instrument.dataSource == DataSource::Kraken && instrument.category == L"SPOT");
+}
+
 DataSource InstrumentSource(const Instrument& instrument)
 {
     return instrument.category == L"US-STOCK" ? DataSource::Kraken : instrument.dataSource;
@@ -101,7 +115,7 @@ DataSource InstrumentSource(const Instrument& instrument)
 
 const wchar_t* InstrumentSourceName(const Instrument& instrument)
 {
-    return DataSourceName(InstrumentSource(instrument));
+    return instrument.category == L"US-STOCK" ? L"Kraken xStocks" : DataSourceName(InstrumentSource(instrument));
 }
 
 std::wstring FormatInstrumentSymbol(const Instrument& instrument)
@@ -109,9 +123,9 @@ std::wstring FormatInstrumentSymbol(const Instrument& instrument)
     if (instrument.category == L"US-STOCK") return instrument.symbol + L"/USD";
     if (instrument.category != L"SPOT") return instrument.symbol;
 
-    static constexpr std::array<std::wstring_view, 12> quoteCurrencies{
+    static constexpr std::array<std::wstring_view, 13> quoteCurrencies{
         L"USDT", L"USDC", L"FDUSD", L"TUSD", L"DAI", L"BTC",
-        L"ETH", L"BGB", L"EUR", L"BRL", L"TRY", L"GBP"
+        L"ETH", L"BGB", L"EUR", L"BRL", L"TRY", L"GBP", L"USD"
     };
     for (const std::wstring_view quote : quoteCurrencies)
     {
@@ -140,6 +154,7 @@ const wchar_t* DataSourceKey(DataSource source)
     case DataSource::Okx: return L"okx";
     case DataSource::Binance: return L"binance";
     case DataSource::Kraken: return L"kraken";
+    case DataSource::Bybit: return L"bybit";
     default: return L"bitget";
     }
 }
@@ -150,7 +165,8 @@ const wchar_t* DataSourceName(DataSource source)
     {
     case DataSource::Okx: return L"OKX";
     case DataSource::Binance: return L"Binance";
-    case DataSource::Kraken: return L"Kraken xStocks";
+    case DataSource::Kraken: return L"Kraken";
+    case DataSource::Bybit: return L"Bybit";
     default: return L"Bitget";
     }
 }
@@ -160,6 +176,7 @@ DataSource DataSourceFromKey(const std::wstring& value)
     if (value == L"okx") return DataSource::Okx;
     if (value == L"binance") return DataSource::Binance;
     if (value == L"kraken") return DataSource::Kraken;
+    if (value == L"bybit") return DataSource::Bybit;
     return DataSource::Bitget;
 }
 
@@ -211,10 +228,10 @@ Settings ConfigStore::Load() const
         instrument.dataSource = DataSourceFromKey(ReadString(*loadPath, section.c_str(),
             L"DataSource", legacySource.c_str()));
         if (instrument.category == L"US-STOCK") instrument.dataSource = DataSource::Kraken;
-        else if (instrument.dataSource == DataSource::Kraken) instrument.dataSource = DataSource::Bitget;
         if ((instrument.category == L"SPOT" || instrument.category == L"USDT-FUTURES" ||
              instrument.category == L"USDC-FUTURES" || instrument.category == L"COIN-FUTURES" ||
-             instrument.category == L"US-STOCK") && IsValidInstrumentSymbol(instrument))
+             instrument.category == L"US-STOCK" || instrument.category == L"USD-FUTURES") &&
+            IsValidInstrumentSymbol(instrument))
             settings.instruments.push_back(std::move(instrument));
     }
     return settings;

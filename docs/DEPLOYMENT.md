@@ -17,7 +17,9 @@ CryptoPrice.dll
 | 数据源 | 域名 |
 | --- | --- |
 | Bitget | `api.bitget.com` |
-| 美股（USD，Kraken xStocks） | `api.kraken.com` |
+| Kraken 现货／美股 | `api.kraken.com` |
+| Kraken USD 永续 | `futures.kraken.com` |
+| Bybit | `api.bybit.com` |
 | OKX | `eea.okx.com`、`www.okx.com` |
 | Binance 现货 | `api.binance.com` |
 | Binance USDT/USDC 合约 | `fapi.binance.com` |
@@ -116,14 +118,19 @@ Symbol=ETHUSDT
 Precision=-1
 ```
 
-`DataSource` 与 `Precision` 都是每个标的独立配置：数据源为 `bitget`、`okx`、`binance`，
+`DataSource` 与 `Precision` 都是每个标的独立配置：数据源为 `bitget`、`okx`、`binance`、`kraken`、`bybit`，
 美股固定为 `kraken`；小数位数为 -1 自动、0–10 固定。旧版全局 `[General] DataSource`
 在加载时作为缺少独立键的标的默认值，保存成功后自动迁移，无需手改 INI。
+
+Kraken 加密市场仅支持 `SPOT` 和 `USD-FUTURES`，示例 `BTCUSD`；不支持 USDT/USDC 本位合约。
+Bybit 支持 `SPOT`、`USDT-FUTURES`、`USDC-FUTURES`、`COIN-FUTURES`；USDC 永续
+使用规范化代码 `BTCUSDC`。两家均不要求账户或密钥，接口地区限制／HTTP 403 会原样报错，
+不会自动切换其他交易所。Kraken 现货暂无滚动 24 小时涨跌幅，合约则按 `open24h` 计算。
 
 ## 7. 部署后验证
 
 - 插件管理显示“Crypto 行情”2.0.0；
-- 每个标的使用自己设置的数据源，标签显示交易所；混合来源时汇总标签显示“多源”；
+- 每个标的使用自己设置的数据源；任务栏不显示交易所，来源在设置列表及悬停提示中核对；
 - 合约显示 `BTCUSDT`，现货显示 `BTC/USDT`；
 - 最新价、标记价、指数价符合所选设置；
 - 现货在选择标记价或指数价时仍显示最新价；

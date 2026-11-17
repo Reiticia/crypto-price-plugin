@@ -336,18 +336,79 @@ bool MarketClient::FetchCategory(DataSource source, const std::wstring& category
         error.clear();
         return true;
     }
-    if (source == DataSource::Kraken)
+    if (!IsSupportedMarket(source, category))
     {
         tickers.clear();
-        error = L"Kraken xStocks 仅支持美股（USD）市场。";
+        error = L"数据源不支持该市场；Kraken 加密行情请选择现货或 USD 本位合约。";
         return false;
     }
     switch (source)
     {
     case DataSource::Okx: return FetchOkx(category, priceType, tickers, error);
     case DataSource::Binance: return FetchBinance(category, priceType, tickers, error);
+    case DataSource::Kraken: return FetchKraken(category, tickers, error);
+    case DataSource::Bybit: return FetchBybit(category, tickers, error);
     default: return FetchBitget(category, tickers, error);
     }
+}
+
+bool MarketClient::FetchKraken(const std::wstring& category,
+                                std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) const
+{
+    tickers.clear();
+    std::string body, pairs, parseError;
+    bool parsed = false;
+    if (category == L"SPOT")
+    {
+        if (!HttpGet(L"api.kraken.com", L"/0/public/AssetPairs?aclass_base=currency", L"Kraken", pairs, error) ||
+            !HttpGet(L"api.kraken.com", L"/0/public/Ticker", L"Kraken", body, error)) return false;
+        parsed = ParseKrakenSpotResponse(pairs, body, tickers, parseError);
+    }
+    else
+    {
+        if (!HttpGet(L"futures.kraken.com", L"/derivatives/api/v3/tickers", L"Kraken Futures", body, error)) return false;
+        parsed = ParseKrakenFuturesResponse(body, tickers, parseError);
+    }
+    error = parsed ? L"" : Utf8ToWide(parseError);
+    return parsed;
+}
+
+bool MarketClient::FetchBybit(const std::wstring& category,
+                               std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) const
+{
+    tickers.clear();
+    const std::wstring apiCategory = category == L"SPOT" ? L"spot" :
+        category == L"COIN-FUTURES" ? L"inverse" : L"linear";
+    std::vector<std::string> pages;
+    std::string cursor, parseError, body;
+    // Instrument metadata distinguishes perpetuals from dated futures and maps
+    // USDC symbols (e.g. BTCPERP) without mistaking them for USDT contracts.
+    for (int page = 0; page < 32; ++page)
+    {
+        std::wstring path = L"/v5/market/instruments-info?category=" + apiCategory + L"&limit=1000";
+        if (!cursor.empty())
+        {
+            path += L"&cursor=";
+            constexpr wchar_t hex[] = L"0123456789ABCDEF";
+            for (const unsigned char ch : cursor)
+            {
+                if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                    (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~') path += ch;
+                else { path += L'%'; path += hex[ch >> 4]; path += hex[ch & 15]; }
+            }
+        }
+        if (!HttpGet(L"api.bybit.com", path, L"Bybit", body, error)) return false;
+        std::string next;
+        if (!BybitNextCursor(body, next, parseError)) { error = Utf8ToWide(parseError); return false; }
+        pages.push_back(body);
+        if (next.empty()) break;
+        if (next == cursor || page == 31) { error = L"Bybit 标的分页未完成，请稍后重试。"; return false; }
+        cursor = std::move(next);
+    }
+    if (!HttpGet(L"api.bybit.com", L"/v5/market/tickers?category=" + apiCategory, L"Bybit", body, error)) return false;
+    const bool parsed = ParseBybitResponse(pages, body, category, tickers, parseError);
+    error = parsed ? L"" : Utf8ToWide(parseError);
+    return parsed;
 }
 
 bool MarketClient::FetchBitget(const std::wstring& category,

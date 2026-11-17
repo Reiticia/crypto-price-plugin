@@ -75,6 +75,7 @@ TrafficMonitor::DataRequired
 | 内部类别 | 含义 | 标准输入 |
 | --- | --- | --- |
 | `SPOT` | 现货 | `BTCUSDT` 或 `BTC/USDT` |
+| `USD-FUTURES` | Kraken 多抵押品 USD 永续（PF） | `BTCUSD`、`ETHUSD` |
 | `US-STOCK` | 代币化美股／ETF（Kraken xStocks） | `AAPL`、`TSLA` 或 `AAPL/USD` |
 | `USDT-FUTURES` | USDT 本位永续 | `BTCUSDT` |
 | `USDC-FUTURES` | USDC 本位永续 | `BTCUSDC` |
@@ -136,6 +137,18 @@ GET https://dapi.binance.com/dapi/v1/premiumIndex
 
 USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` 永续，例如 `BTCUSD_PERP` 规范化成 `BTCUSD`，日期交割合约不会混入。
 
+### Kraken 加密行情与 Bybit
+
+Kraken Spot 使用 `/0/public/AssetPairs?aclass_base=currency` 与 `/0/public/Ticker` 联合解析，
+按 `wsname` 规范化 `XBT→BTC`、`XDG→DOGE`，不猜测内部 X/Z 资产前缀。现货 `o` 是当日
+开盘价，因此不生成 24 小时涨跌幅。`USD-FUTURES` 使用 `futures.kraken.com/derivatives/api/v3/tickers`，
+仅接受未暂停的 `PF_` 永续，读取数值型 last/mark/index，按 open24h 计算涨跌。
+
+Bybit 使用 `/v5/market/instruments-info`（分页、游标编码、最多 32 页）与 `/v5/market/tickers`。
+按 category spot/linear/inverse、contractType、quoteCoin 过滤永续与结算币；USDC 原始
+BTCPERP 用 baseCoin+quoteCoin 映射为 BTCUSDC。price24hPcnt 本身是比例，不再除以 100。
+`ExchangeJson.cpp` 严格检查 JSON 容器、数字、缺字段及 API 错误，失败时清空部分结果。
+
 ### Kraken xStocks 美股
 
 `GET https://api.kraken.com/0/public/Ticker?asset_class=tokenized_asset` 返回代币化资产。
@@ -149,7 +162,7 @@ USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` �
 - `GetItem(0)` 是汇总项，ID 为 `CryptoPrice0`。
 - `GetItem(1..N)` 是各标的独立项，ID 使用 `CryptoPriceItem0..15`；未配置槽位不会注册。
 - TrafficMonitor 只在加载插件时枚举一次显示项，且没有动态增删显示项的插件接口。因此运行期间修改标的数量后，需要重启 TrafficMonitor 才能让“显示设置”的项目数量同步。
-- 单一来源的汇总标签显示该交易所，混合来源显示“多源”；各标的标签带交易所，避免同名交易对混淆。
+- 任务栏独立项仅显示 symbol，汇总标签固定为“行情”；设置列表、显示项名称和悬停提示保留来源，任务栏示例宽度不再为交易所名称占位。
 - `GetItemValueText()` 只返回缓存，不能访问网络。
 - 没有配置标的时汇总项仍返回占位内容。
 
@@ -179,7 +192,7 @@ Precision=-1
 
 规则：
 
-- 每个 `[InstrumentN] DataSource` 可为 `bitget`、`okx`、`binance`；美股规范化为 `kraken`；
+- 每个 `[InstrumentN] DataSource` 可为 `bitget`、`okx`、`binance`、`kraken`、`bybit`；美股规范化为 `kraken`；
 - 缺少独立数据源键时读取旧 `[General] DataSource`，再缺省为 Bitget；保存成功后移除旧全局键；
 - 去重键为（数据源、市场、symbol），精度不影响去重；美股固定 Kraken；
 - `RefreshSeconds` 范围为 2–300；

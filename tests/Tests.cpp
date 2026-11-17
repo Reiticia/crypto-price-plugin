@@ -242,6 +242,14 @@ int main()
     Check(reloadedSources.instruments[0].dataSource == cryptoprice::DataSource::Binance &&
           reloadedSources.instruments[1].dataSource == cryptoprice::DataSource::Okx,
           "per-instrument sources survive reload without legacy key");
+    cryptoprice::Settings newSources;
+    newSources.instruments = {{L"SPOT", L"BTCUSD", 2, cryptoprice::DataSource::Kraken},
+                              {L"USD-FUTURES", L"ETHUSD", -1, cryptoprice::DataSource::Kraken},
+                              {L"USDC-FUTURES", L"BTCUSDC", 3, cryptoprice::DataSource::Bybit}};
+    Check(config.Save(newSources), "save Kraken crypto and Bybit");
+    const auto loadedNewSources = config.Load();
+    Check(loadedNewSources.instruments == newSources.instruments,
+          "Kraken source is not reset to Bitget and Bybit persists");
     std::filesystem::remove_all(configDirectory);
 
     const auto dohAddresses = cryptoprice::ParseDohIpv4Addresses(

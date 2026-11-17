@@ -42,9 +42,14 @@ BOOL CALLBACK Inspect(HWND window, LPARAM)
     const HWND category = GetDlgItem(window, 1003);
     SendMessageW(category, CB_SETCURSEL, 0, 0);
     SendMessageW(window, WM_COMMAND, MAKEWPARAM(1003, CBN_SELCHANGE), reinterpret_cast<LPARAM>(category));
-    Check(IsWindowEnabled(source) && SendMessageW(source, CB_GETCOUNT, 0, 0) == 3,
-          "switching stock to crypto restores three source choices");
-    SendMessageW(source, CB_SETCURSEL, 0, 0);
+    Check(IsWindowEnabled(source) && SendMessageW(source, CB_GETCOUNT, 0, 0) == 5,
+          "switching stock to crypto restores five source choices");
+    SendMessageW(category, CB_SETCURSEL, 5, 0);
+    SendMessageW(window, WM_COMMAND, MAKEWPARAM(1003, CBN_SELCHANGE), reinterpret_cast<LPARAM>(category));
+    Check(SendMessageW(source, CB_GETCURSEL, 0, 0) == 3, "USD contracts default to Kraken");
+    SendMessageW(source, CB_SETCURSEL, 4, 0);
+    GetWindowTextW(source, text, 128);
+    Check(std::wstring(text) == L"Bybit", "Bybit is selectable without shifting existing sources");
     SendMessageW(list, LB_SETCURSEL, 1, 0);
     SendMessageW(window, WM_COMMAND, MAKEWPARAM(1001, LBN_SELCHANGE), reinterpret_cast<LPARAM>(list));
     Check(SendMessageW(source, CB_GETCURSEL, 0, 0) == 1,

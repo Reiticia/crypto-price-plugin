@@ -14,6 +14,7 @@ enum class DataSource
     Okx,
     Binance,
     Kraken,
+    Bybit,
 };
 
 enum class PriceType
@@ -53,6 +54,8 @@ std::wstring NormalizeSymbol(std::wstring value);
 bool IsValidSymbol(const std::wstring& value);
 std::wstring NormalizeStockSymbol(std::wstring value);
 bool IsValidInstrumentSymbol(const Instrument& instrument);
+bool IsSupportedMarket(DataSource source, const std::wstring& category);
+bool Supports24HourChange(const Instrument& instrument);
 DataSource InstrumentSource(const Instrument& instrument);
 const wchar_t* InstrumentSourceName(const Instrument& instrument);
 std::wstring FormatInstrumentSymbol(const Instrument& instrument);

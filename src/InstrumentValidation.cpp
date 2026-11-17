@@ -25,7 +25,7 @@ bool MatchesCategory(const Instrument& instrument)
     if (instrument.category == L"SPOT" || instrument.category == L"US-STOCK") return true;
     const std::wstring quote = instrument.category == L"USDT-FUTURES" ? L"USDT" :
         instrument.category == L"USDC-FUTURES" ? L"USDC" :
-        instrument.category == L"COIN-FUTURES" ? L"USD" : L"";
+        (instrument.category == L"COIN-FUTURES" || instrument.category == L"USD-FUTURES") ? L"USD" : L"";
     return !quote.empty() && instrument.symbol.size() > quote.size() &&
         instrument.symbol.compare(instrument.symbol.size() - quote.size(), quote.size(), quote) == 0;
 }
@@ -38,6 +38,8 @@ std::wstring ValidateInstruments(const Settings& settings, const CategoryFetcher
     {
         const std::wstring prefix = std::wstring(InstrumentSourceName(instrument)) + L" / " +
             instrument.category + L" / " + FormatInstrumentSymbol(instrument) + L"：";
+        if (!IsSupportedMarket(InstrumentSource(instrument), instrument.category))
+            return prefix + L"数据源不支持该市场；Kraken 加密行情请选择现货或 USD 本位合约。";
         if (!IsValidInstrumentSymbol(instrument) || !MatchesCategory(instrument))
             return prefix + L"交易对与市场类型不匹配，请检查后重试。";
 

@@ -12,6 +12,7 @@ add_library(CryptoPrice SHARED
     src/CryptoPricePlugin.cpp
     src/Config.cpp
     src/Json.cpp
+    src/ExchangeJson.cpp
     src/OptionsWindow.cpp
     src/Tooltip.cpp
     src/dllmain.cpp
@@ -41,6 +42,7 @@ if(BUILD_TESTING)
         src/InstrumentValidation.cpp
         src/Config.cpp
         src/Json.cpp
+        src/ExchangeJson.cpp
         src/Tooltip.cpp
     )
     target_include_directories(CryptoPriceTests PRIVATE src)
@@ -56,9 +58,29 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME CryptoPriceTests COMMAND CryptoPriceTests)
 
+    add_executable(CryptoPriceExchangeTests tests/ExchangeTests.cpp src/ExchangeJson.cpp
+        src/Config.cpp src/InstrumentValidation.cpp)
+    target_include_directories(CryptoPriceExchangeTests PRIVATE src)
+    target_compile_features(CryptoPriceExchangeTests PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPriceExchangeTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(MSVC)
+        target_compile_options(CryptoPriceExchangeTests PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME CryptoPriceExchangeTests COMMAND CryptoPriceExchangeTests)
+
+    add_executable(CryptoPriceExchangeLiveSmoke tests/ExchangeLiveSmoke.cpp src/MarketClient.cpp
+        src/Json.cpp src/ExchangeJson.cpp src/Config.cpp)
+    target_include_directories(CryptoPriceExchangeLiveSmoke PRIVATE src)
+    target_compile_features(CryptoPriceExchangeLiveSmoke PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPriceExchangeLiveSmoke PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(CryptoPriceExchangeLiveSmoke PRIVATE winhttp)
+    if(MSVC)
+        target_compile_options(CryptoPriceExchangeLiveSmoke PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+
     add_executable(CryptoPriceOptionsSourceTests
         tests/OptionsSourceTests.cpp src/OptionsWindow.cpp src/Config.cpp
-        src/InstrumentValidation.cpp src/MarketClient.cpp src/Json.cpp)
+        src/InstrumentValidation.cpp src/MarketClient.cpp src/Json.cpp src/ExchangeJson.cpp)
     target_include_directories(CryptoPriceOptionsSourceTests PRIVATE src)
     target_compile_features(CryptoPriceOptionsSourceTests PRIVATE cxx_std_17)
     target_compile_definitions(CryptoPriceOptionsSourceTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)

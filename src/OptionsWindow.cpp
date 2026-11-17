@@ -48,6 +48,7 @@ const wchar_t* CategoryCaption(const std::wstring& category)
     if (category == L"SPOT") return L"现货";
     if (category == L"USDC-FUTURES") return L"USDC 本位合约";
     if (category == L"COIN-FUTURES") return L"币本位合约";
+    if (category == L"USD-FUTURES") return L"USD 本位合约（Kraken）";
     return L"USDT 本位合约";
 }
 
@@ -57,6 +58,7 @@ int CategoryIndex(const std::wstring& category)
     if (category == L"COIN-FUTURES") return 2;
     if (category == L"SPOT") return 3;
     if (category == L"US-STOCK") return 4;
+    if (category == L"USD-FUTURES") return 5;
     return 0;
 }
 
@@ -66,6 +68,7 @@ std::wstring CategoryAt(int index)
     if (index == 2) return L"COIN-FUTURES";
     if (index == 3) return L"SPOT";
     if (index == 4) return L"US-STOCK";
+    if (index == 5) return L"USD-FUTURES";
     return L"USDT-FUTURES";
 }
 }
@@ -182,6 +185,11 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     L"数据源仅作用于当前标的；修改后点击“更新选中项”。");
             }
             return 0;
+        case kDataSource:
+            if (HIWORD(wParam) == CBN_SELCHANGE &&
+                SendMessageW(dataSource_, CB_GETCURSEL, 0, 0) == static_cast<LRESULT>(DataSource::Kraken))
+                SetStatus(L"Kraken 加密：现货如 BTC/USD；USD 本位合约如 BTCUSD，不支持 USDT/USDC 合约。");
+            return 0;
         case kAdd: AddNew(); return 0;
         case kUpdate: UpdateSelected(); return 0;
         case kRemove: RemoveSelected(); return 0;
@@ -221,6 +229,7 @@ void OptionsWindow::CreateControls()
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"币本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"现货"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"美股（USD）"));
+    SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"USD 本位合约（Kraken）"));
     SendMessageW(category_, CB_SETCURSEL, 0, 0);
 
     AddControl(window_, L"STATIC", L"数据源", 0, 30, 238, 65, 20, -1);
@@ -320,9 +329,11 @@ void OptionsWindow::UpdateSourceChoices()
     if (stocks)
         SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Kraken xStocks"));
     else
-        for (const wchar_t* name : {L"Bitget", L"OKX", L"Binance"})
+        for (const wchar_t* name : {L"Bitget", L"OKX", L"Binance", L"Kraken", L"Bybit"})
             SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
-    SendMessageW(dataSource_, CB_SETCURSEL, stocks ? 0 : (std::max)(0, (std::min)(previous, 2)), 0);
+    SendMessageW(dataSource_, CB_SETCURSEL, stocks ? 0 : (std::max)(0, (std::min)(previous, 4)), 0);
+    if (SendMessageW(category_, CB_GETCURSEL, 0, 0) == 5)
+        SendMessageW(dataSource_, CB_SETCURSEL, static_cast<WPARAM>(DataSource::Kraken), 0);
     EnableWindow(dataSource_, !stocks && !validation_.valid());
 }
 

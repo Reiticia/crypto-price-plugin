@@ -1,6 +1,6 @@
 # Crypto 行情插件
 
-用于 [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) 的多交易所现货与合约行情插件。可以在 Bitget、OKX、Binance 之间切换数据源，同时监控多个标的。
+用于 [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) 的多交易所现货与合约行情插件。可以在 Bitget、OKX、Binance、Kraken、Bybit 之间切换数据源，同时监控多个标的。
 
 插件只调用交易所公共行情接口，不需要 API Key，也不会访问账户或执行交易。
 
@@ -12,9 +12,9 @@
 
 ## 功能
 
-- 数据源按标的独立设置：可同时监控 Bitget、OKX、Binance 的报价，同一交易对可添加多个交易所
+- 数据源按标的独立设置：可同时监控 Bitget、OKX、Binance、Kraken、Bybit 的报价，同一交易对可添加多个交易所
 - 同时配置最多 16 个现货或合约标的
-- 支持现货、USDT 本位、USDC 本位和币本位合约
+- 支持现货、USDT 本位、USDC 本位、币本位合约，以及 Kraken 的 USD 本位合约
 - 支持“美股（USD）”：固定使用 Kraken xStocks 美元交易对，输入 `AAPL`、`TSLA`、`NVDA` 等代码；与加密标的可混合监控
 - “显示价格”可选择最新价格、标记价格或指数价格；该选项全局作用于合约，现货始终显示最新成交价
 - 合约显示为 `BTCUSDT`，现货显示为 `BTC/USDT`
@@ -26,14 +26,20 @@
 
 ## 统一市场映射
 
-| 插件市场类型 | Bitget | OKX | Binance |
-| --- | --- | --- | --- |
-| 现货 | `SPOT` | `SPOT` | Spot |
-| USDT 本位 | `USDT-FUTURES` | USDT Swap | USDⓈ-M Futures |
-| USDC 本位 | `USDC-FUTURES` | USDC Swap | USDⓈ-M Futures |
-| 币本位 | `COIN-FUTURES` | USD Swap | COIN-M Futures |
+| 插件市场类型 | Bitget | OKX | Binance | Kraken | Bybit |
+| --- | --- | --- | --- | --- | --- |
+| 现货 | `SPOT` | `SPOT` | Spot | Spot | Spot |
+| USDT 本位 | `USDT-FUTURES` | USDT Swap | USDⓈ-M Futures | 不支持 | Linear USDT Perpetual |
+| USDC 本位 | `USDC-FUTURES` | USDC Swap | USDⓈ-M Futures | 不支持 | Linear USDC Perpetual |
+| 币本位 | `COIN-FUTURES` | USD Swap | COIN-M Futures | 不支持 | Inverse Perpetual |
+| USD 本位 | 不支持 | 不支持 | 不支持 | PF Multi-Collateral Perpetual | 不支持 |
 
 例如币本位 `BTCUSD` 会自动映射为 OKX 的 `BTC-USD-SWAP` 或 Binance 的 `BTCUSD_PERP`。
+Kraken 现货输入 `BTC/USD`、`BTC/USDT` 等实际交易对，`XBT` 自动映射为 `BTC`；
+USD 本位合约输入 `BTCUSD`、`ETHUSD`（对应 `PF_XBTUSD` 等），不冒充 USDT/USDC 报价，
+不包含交割及 PI 反向合约。Kraken 现货仅提供最新价，暂不显示滚动 24 小时涨跌幅；合约
+支持最新价、标记价、指数价及 24 小时涨跌幅。Bybit USDC 合约输入 `BTCUSDC`，内部匹配
+`BTCPERP` 等真实交易所代码；交割合约会被过滤。
 
 “美股（USD）”的数据源固定为 Kraken xStocks，不受全局“显示价格”影响；显示为
 `AAPL/USD`，不是 USDT 报价，也不按 USDT = USD 换算。行情为交易所的代币化美股／ETF
@@ -98,13 +104,16 @@ build/
 5. 在 TrafficMonitor 显示设置中启用汇总项或各标的独立项。
 
 数据源位于“标的独立设置”中，与交易对、市场类型和小数位数一起保存。选择列表中的标的，
-修改数据源后点击“更新选中项”，再点“确定”。显示标签标明交易所，混合来源的汇总显示“多源”。
+修改数据源后点击“更新选中项”，再点“确定”。任务栏只显示标的和行情，汇总标签固定为“行情”；
+交易所来源在设置列表、显示项名称及悬停提示中保留。
 旧 INI 的 `[General] DataSource` 会迁移为每个标的的默认值，保存后写入各 `[InstrumentN] DataSource`。
 
 输入 `BTC/USDT`、`BTC-USDT` 或 `btcusdt` 都会转换成内部 symbol `BTCUSDT`。现货界面显示 `BTC/USDT`，合约界面显示 `BTCUSDT`。
 
 ## 官方接口
 
+- [Bybit V5 Tickers](https://bybit-exchange.github.io/docs/v5/market/tickers)
+- [Kraken Futures Tickers](https://docs.kraken.com/api/docs/futures-api/trading/get-tickers/)
 - [Kraken xStocks Ticker](https://docs.kraken.com/api/docs/rest-api/get-ticker-information/)（`asset_class=tokenized_asset`）
 - [Bitget UTA Tickers](https://www.bitget.com/zh-CN/api-doc/uta/public/Tickers)
 - [OKX REST Market Data](https://www.okx.com/docs-v5/en/#rest-api-market-data-get-tickers)

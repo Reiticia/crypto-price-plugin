@@ -20,8 +20,9 @@
 | `CryptoPriceTests` | 否 | 配置、显示格式、三家 JSON 解析及标的价格有效性校验 |
 | `CryptoPriceSmoke` | 否 | DLL、API v7、混合现货/合约显示项 |
 | `CryptoPriceNoChangeWidthSmoke` | 否 | 隐藏涨跌幅时汇总项和独立项的宽度示例不含百分比 |
+| `CryptoPriceExchangeTests` | 否 | Kraken 现货元数据与数字型永续、Bybit 结算币／交割过滤、API 错误和分页解析 |
 | `CryptoPriceOptionsSourceTests` | 否 | 数据源位于独立区、选中加载各自来源、美股锁定 Kraken、取消不提交 |
-| `CryptoPriceMixedSourceSmoke` | 否 | 混合 Binance/OKX 的标的标签和“多源”汇总 |
+| `CryptoPriceMixedSourceSmoke` | 否 | 混合 Binance/OKX 来源正确，任务栏标签、值与示例不含交易所，汇总标签为“行情” |
 | `CryptoPriceStockSmoke` | 否 | 美股 USD 标签、Kraken 数据源名称、无涨跌幅占位 |
 | `CryptoPriceSmoke --live` | 是 | 指定数据源的真实合约和现货行情 |
 
@@ -45,7 +46,7 @@ cmake --build --preset win32-release
 ctest --preset win32-release
 ```
 
-六个离线测试都应显示 `Passed`。
+七个离线测试都应显示 `Passed`。
 
 ## 4. 解析测试范围
 
@@ -138,6 +139,20 @@ Binance：
 - 进程退出码为 0。
 
 实时测试最多等待约 20 秒，以覆盖 OKX 直连失败后依次尝试本地代理和 DoH 解析真实 IP 的首次请求。
+
+### Kraken / Bybit 联网回归（显式执行）
+
+```powershell
+.\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe kraken SPOT BTCUSD last
+.\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe kraken USD-FUTURES BTCUSD mark
+.\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe bybit SPOT BTCUSDT last
+.\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe bybit USDT-FUTURES BTCUSDT mark
+.\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe bybit USDC-FUTURES BTCUSDC index
+.\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe bybit COIN-FUTURES BTCUSD last
+```
+
+分别检查最新价、标记价、指数价与实际结算币一致。Kraken 现货涨跌幅为空，不应拿当日开盘价计算 24 小时涨幅。
+Bybit 若返回 HTTP 403，先检查地区／网络限制，不应绕过限制或回退成其他交易所的价格。
 
 ## 7. DLL 导出和架构
 

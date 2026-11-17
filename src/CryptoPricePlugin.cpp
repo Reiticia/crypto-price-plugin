@@ -61,7 +61,7 @@ std::wstring SummarySource(const Settings& settings)
 
 std::wstring DisplaySymbol(const Instrument& instrument)
 {
-    return FormatInstrumentSymbol(instrument) + L" [" + InstrumentSourceName(instrument) + L"]";
+    return FormatInstrumentSymbol(instrument);
 }
 
 std::wstring SelectPrice(const Ticker& ticker, PriceType type, bool spot, int precision)
@@ -207,7 +207,7 @@ const wchar_t* CryptoPricePlugin::GetInfo(PluginInfoIndex index)
     switch (index)
     {
     case TMI_NAME: return L"Crypto 行情";
-    case TMI_DESCRIPTION: return L"切换 Bitget、OKX、Binance 并监控多个现货与合约行情";
+    case TMI_DESCRIPTION: return L"按标的选择 Bitget、OKX、Binance、Kraken、Bybit，监控现货、合约及美股行情";
     case TMI_AUTHOR: return L"Reiticia";
     case TMI_COPYRIGHT: return L"Copyright (C) 2026";
     case TMI_VERSION: return L"2.2.0";
@@ -274,7 +274,7 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
         std::lock_guard<std::mutex> lock(settingsMutex_);
         settings_ = std::move(settings);
         items_[0].name_ = SummarySource(settings_) + L" 行情汇总";
-        items_[0].label_ = SummarySource(settings_) + L": ";
+        items_[0].label_ = L"行情: ";
         for (std::size_t index = 0; index < settings_.instruments.size(); ++index)
         {
             PriceItem& item = items_[index + 1];
@@ -283,7 +283,7 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
             item.label_ = DisplaySymbol(settings_.instruments[index]) + L": ";
             item.value_ = L"--";
             item.sample_ = PriceSample(settings_.instruments[index].precision);
-            if (settings_.showChange && settings_.instruments[index].category != L"US-STOCK")
+            if (settings_.showChange && Supports24HourChange(settings_.instruments[index]))
                 item.sample_ += L" +00.00%";
             item.detail_ = L"等待行情";
         }
@@ -417,7 +417,7 @@ void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
     }
     item.value_ = SelectPrice(result.ticker, settings.priceType,
                               IsSpot(result.instrument), result.instrument.precision);
-    if (settings.showChange && result.instrument.category != L"US-STOCK")
+    if (settings.showChange && Supports24HourChange(result.instrument))
         item.value_ += FormatChange(result.ticker.price24hPcnt);
     item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice, result.instrument.precision);
     if (result.instrument.category == L"US-STOCK")
@@ -433,7 +433,7 @@ void CryptoPricePlugin::RebuildAggregate()
 
     PriceItem& aggregate = items_[0];
     aggregate.name_ = SummarySource(settings_) + L" 行情汇总";
-    aggregate.label_ = SummarySource(settings_) + L": ";
+    aggregate.label_ = L"行情: ";
     aggregate.value_.clear();
     aggregate.sample_.clear();
     aggregate.detail_ = L"共 " + std::to_wstring(settings_.instruments.size()) + L" 个标的";
@@ -447,7 +447,7 @@ void CryptoPricePlugin::RebuildAggregate()
         aggregate.value_ += DisplaySymbol(settings_.instruments[index]) + L" " + items_[index + 1].value_;
         aggregate.sample_ += DisplaySymbol(settings_.instruments[index]) + L" " +
                              PriceSample(settings_.instruments[index].precision);
-        if (settings_.showChange && settings_.instruments[index].category != L"US-STOCK")
+        if (settings_.showChange && Supports24HourChange(settings_.instruments[index]))
             aggregate.sample_ += L" +00.00%";
     }
 }
@@ -465,7 +465,8 @@ void CryptoPricePlugin::RebuildTooltip(std::size_t itemCount)
         const PriceItem& item = items_[index + 1];
         // The value already contains the selected price; don't repeat last/mark/index
         // or the same stock disclaimer on every line. Bound errors independently.
-        std::wstring line = item.label_ + item.value_;
+        std::wstring line = std::wstring(InstrumentSourceName(settings_.instruments[index])) +
+                            L" / " + item.label_ + item.value_;
         if (item.value_ == L"--" && !item.detail_.empty())
             line += L"（" + item.detail_.substr(0, 40) + (item.detail_.size() > 40 ? L"…" : L"") + L"）";
         lines.push_back(std::move(line));

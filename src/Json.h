@@ -35,5 +35,12 @@ bool OverlayBinancePremium(const std::string& json, bool coinMargined,
 bool ParseKrakenStockResponse(const std::string& json,
                               std::unordered_map<std::string, Ticker>& tickers,
                               std::string& error);
+bool ParseKrakenSpotResponse(const std::string& pairsJson, const std::string& tickerJson,
+                            std::unordered_map<std::string, Ticker>& tickers, std::string& error);
+bool ParseKrakenFuturesResponse(const std::string& json,
+                               std::unordered_map<std::string, Ticker>& tickers, std::string& error);
+bool ParseBybitResponse(const std::vector<std::string>& instruments, const std::string& json,
+                        const std::wstring& category, std::unordered_map<std::string, Ticker>& tickers, std::string& error);
+bool BybitNextCursor(const std::string& json, std::string& cursor, std::string& error);
 std::vector<std::string> ParseDohIpv4Addresses(const std::string& json);
 } // namespace cryptoprice
