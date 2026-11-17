@@ -104,8 +104,8 @@ bool IsSupportedMarket(DataSource source, const std::wstring& category)
 
 bool Supports24HourChange(const Instrument& instrument)
 {
-    return instrument.category != L"US-STOCK" &&
-        !(instrument.dataSource == DataSource::Kraken && instrument.category == L"SPOT");
+    // Kraken WebSocket v2 supplies a genuine rolling change_pct (unlike REST o).
+    return instrument.category != L"US-STOCK";
 }
 
 DataSource InstrumentSource(const Instrument& instrument)

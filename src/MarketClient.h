@@ -15,6 +15,9 @@ public:
                        std::unordered_map<std::string, Ticker>& tickers,
                        std::wstring& error) const;
 
+    bool FetchStreamMetadata(DataSource source, const std::wstring& category,
+                             std::vector<std::string>& pages, std::wstring& error) const;
+
 private:
     bool FetchKraken(const std::wstring& category,
                      std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) const;

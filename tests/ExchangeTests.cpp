@@ -71,9 +71,9 @@ int main()
         check(!ParseBybitResponse({instruments}, bad, L"USDT-FUTURES", tickers, error) && tickers.empty(), "Bybit errors and malformed JSON fail closed");
     check(!ParseKrakenSpotResponse(pairs, R"({"error":["failure"],"result":{}})", tickers, error), "Kraken API error");
     check(IsSupportedMarket(DataSource::Kraken, L"USD-FUTURES") && !IsSupportedMarket(DataSource::Kraken, L"USDT-FUTURES"), "Kraken USD contracts are not mislabeled USDT");
-    check(!Supports24HourChange({L"SPOT", L"BTCUSD", 2, DataSource::Kraken}) &&
+    check(Supports24HourChange({L"SPOT", L"BTCUSD", 2, DataSource::Kraken}) &&
           Supports24HourChange({L"USD-FUTURES", L"BTCUSD", 2, DataSource::Kraken}),
-          "Kraken spot does not reserve fake change width; futures do");
+          "Kraken spot WebSocket change_pct and futures change both support rolling change");
     check(FormatInstrumentSymbol({L"SPOT", L"BTCUSD", 2, DataSource::Kraken}) == L"BTC/USD",
           "USD spot display keeps currency separator");
     check(DataSourceFromKey(L"bybit") == DataSource::Bybit && DataSourceFromKey(L"kraken") == DataSource::Kraken, "new source keys");

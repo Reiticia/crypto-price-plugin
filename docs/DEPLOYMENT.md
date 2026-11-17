@@ -12,14 +12,18 @@ CryptoPrice.dll
 
 ## 2. 网络要求
 
-根据要使用的数据源放行 HTTPS 443：
+根据要使用的数据源放行 HTTPS / WSS TLS 443（包括 WebSocket Upgrade 和长连接）：
 
 | 数据源 | 域名 |
 | --- | --- |
 | Bitget | `api.bitget.com` |
 | Kraken 现货／美股 | `api.kraken.com` |
 | Kraken USD 永续 | `futures.kraken.com` |
-| Bybit | `api.bybit.com` |
+| Bybit | `api.bybit.com`、`stream.bybit.com` |
+| Bitget WebSocket | `ws.bitget.com` |
+| OKX WebSocket | `ws.okx.com` |
+| Binance WebSocket | `stream.binance.com`、`fstream.binance.com`、`dstream.binance.com` |
+| Kraken Spot / xStocks WebSocket | `ws.kraken.com` |
 | OKX | `eea.okx.com`、`www.okx.com` |
 | Binance 现货 | `api.binance.com` |
 | Binance USDT/USDC 合约 | `fapi.binance.com` |
@@ -125,7 +129,8 @@ Precision=-1
 Kraken 加密市场仅支持 `SPOT` 和 `USD-FUTURES`，示例 `BTCUSD`；不支持 USDT/USDC 本位合约。
 Bybit 支持 `SPOT`、`USDT-FUTURES`、`USDC-FUTURES`、`COIN-FUTURES`；USDC 永续
 使用规范化代码 `BTCUSDC`。两家均不要求账户或密钥，接口地区限制／HTTP 403 会原样报错，
-不会自动切换其他交易所。Kraken 现货暂无滚动 24 小时涨跌幅，合约则按 `open24h` 计算。
+不会自动切换其他交易所。Kraken 现货运行时通过 WebSocket v2 `change_pct` 获得 24 小时涨跌幅；
+REST 诊断仍不使用当日开盘价生成 24 小时涨幅。
 
 ## 7. 部署后验证
 
@@ -137,6 +142,10 @@ Bybit 支持 `SPOT`、`USDT-FUTURES`、`USDC-FUTURES`、`COIN-FUTURES`；USDC �
 - 所有价格保留两位小数；
 - 重启 TrafficMonitor 后配置仍有效；
 - 任务栏没有因网络请求出现卡顿。
+
+运行时不再 REST 轮询价格，`RefreshSeconds` 仅是显示间隔。15 秒心跳、断线自动退避重连，
+连接失效时清空价格并在提示中显示原因。**常驻推送启动后 DLL 会保持映射，升级、回滚
+及替换文件必须完全退出 TrafficMonitor；不能依赖进程内卸载。** 其他插件可继续正常工作。
 
 ## 8. 回滚
 

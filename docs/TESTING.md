@@ -20,6 +20,8 @@
 | `CryptoPriceTests` | 否 | 配置、显示格式、三家 JSON 解析及标的价格有效性校验 |
 | `CryptoPriceSmoke` | 否 | DLL、API v7、混合现货/合约显示项 |
 | `CryptoPriceNoChangeWidthSmoke` | 否 | 隐藏涨跌幅时汇总项和独立项的宽度示例不含百分比 |
+| `CryptoPriceStreamTests` | 否 | 五家 WSS 订阅、Bybit 快照／delta、频道合并、错误、重连空缓存、股票映射 |
+| `CryptoPriceStreamLifecycleTests` | 否 | 无网络场景的停止、旧回调隔离、配置代次切换、析构与关闭状态 |
 | `CryptoPriceExchangeTests` | 否 | Kraken 现货元数据与数字型永续、Bybit 结算币／交割过滤、API 错误和分页解析 |
 | `CryptoPriceOptionsSourceTests` | 否 | 数据源位于独立区、选中加载各自来源、美股锁定 Kraken、取消不提交 |
 | `CryptoPriceMixedSourceSmoke` | 否 | 混合 Binance/OKX 来源正确，任务栏标签、值与示例不含交易所，汇总标签为“行情” |
@@ -46,7 +48,7 @@ cmake --build --preset win32-release
 ctest --preset win32-release
 ```
 
-七个离线测试都应显示 `Passed`。
+九个离线测试都应显示 `Passed`。
 
 ## 4. 解析测试范围
 
@@ -80,7 +82,7 @@ ctest --preset win32-release
 - 汇总项包含 `BTCUSDT` 和 `ETH/USDT`；
 - 已配置的两个独立显示项存在；
 - 已配置项之后不注册空槽位；
-- 插件可以安全卸载。
+- 未启动网络的 ABI 检查不发请求，插件可释放；启动 WebSocket 后 DLL 保持映射，只支持退出宿主后替换。
 
 隐藏涨跌幅后的宽度回归：
 
@@ -151,8 +153,26 @@ Binance：
 .\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe bybit COIN-FUTURES BTCUSD last
 ```
 
-分别检查最新价、标记价、指数价与实际结算币一致。Kraken 现货涨跌幅为空，不应拿当日开盘价计算 24 小时涨幅。
+上面的 ExchangeLiveSmoke 是显式 REST 诊断，不是插件运行路径；Kraken REST 现货涨跌幅为空。
+运行时 WebSocket v2 则使用真实的 change_pct。分别检查最新价、标记价、指数价与结算币。
 Bybit 若返回 HTTP 403，先检查地区／网络限制，不应绕过限制或回退成其他交易所的价格。
+
+### WebSocket 实际推送回归
+
+```powershell
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe bitget USDT-FUTURES BTCUSDT
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe okx USDT-FUTURES BTCUSDT
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe binance USDT-FUTURES BTCUSDT
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe bybit USDC-FUTURES BTCUSDC
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe kraken SPOT BTCUSD
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe kraken USD-FUTURES BTCUSD
+.\build\x64\Release\CryptoPriceStreamLiveSmoke.exe kraken US-STOCK AAPL
+```
+
+最多等待 35 秒，必须收到至少一条有效价格，活跃市场通常两条以上。追加 `--hold` 会等待\n18 秒之后的新报价，覆盖应用心跳周期；追加 `--reconnect` 会主动停止后以新 generation\n重连，要求新 session 取到报价且旧 session 在 Stop 之后不再回调。
+另用代理／防火墙模拟断网、恢复后重连，检查旧价被清空且自动重订阅。显示间隔设为
+300 秒时，断线提示仍应及时出现；修改标的后旧 session 不得覆盖新配置。
+REST 只应出现在必要元数据和主动设置校验，不能周期请求 ticker。
 
 ## 7. DLL 导出和架构
 
@@ -193,7 +213,7 @@ TMPluginGetInstance
 - OKX 直连失败时依次回退到区域入口、本地代理（Clash/v2rayN 常用端口）和 DoH 解析真实 IP；
 - Binance 日期交割合约不会覆盖永续；
 - 数据源连续快速切换，不能显示上一家的迟到响应；
-- 2 秒和 300 秒刷新边界；
+- 2 秒和 300 秒显示间隔边界，推送接收不断开、不触发 REST 轮询；
 - 重复标的、非法 symbol、未知市场组合；
 - 添加不存在的标的时弹出失败原因，列表和配置不变；更新为不存在的标的时保留原项；
 - 添加有效标的后切换数据源或价格类型，点击确定会重新校验整个列表，失败时不保存；

@@ -352,6 +352,52 @@ bool MarketClient::FetchCategory(DataSource source, const std::wstring& category
     }
 }
 
+bool MarketClient::FetchStreamMetadata(DataSource source, const std::wstring& category,
+                                       std::vector<std::string>& pages, std::wstring& error) const
+{
+    pages.clear();
+    std::string body;
+    if (source == DataSource::Kraken && category == L"USD-FUTURES")
+    {
+        if (!HttpGet(L"futures.kraken.com", L"/derivatives/api/v3/instruments", L"Kraken Futures metadata", body, error)) return false;
+        pages.push_back(std::move(body));
+    }
+    else if (source == DataSource::Kraken)
+    {
+        const std::wstring assetClass = category == L"US-STOCK" ? L"tokenized_asset" : L"currency";
+        if (!HttpGet(L"api.kraken.com", L"/0/public/AssetPairs?aclass_base=" + assetClass, L"Kraken metadata", body, error)) return false;
+        pages.push_back(std::move(body));
+    }
+    if (source != DataSource::Bybit) return true;
+    const std::wstring apiCategory = category == L"SPOT" ? L"spot" : category == L"COIN-FUTURES" ? L"inverse" : L"linear";
+    std::string cursor;
+    for (int page = 0; page < 32; ++page)
+    {
+        std::wstring path = L"/v5/market/instruments-info?category=" + apiCategory + L"&limit=1000";
+        if (!cursor.empty())
+        {
+            path += L"&cursor=";
+            constexpr wchar_t hex[] = L"0123456789ABCDEF";
+            for (const unsigned char ch : cursor)
+            {
+                if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+                    (ch >= '0' && ch <= '9') || ch == '-' || ch == '_' || ch == '.' || ch == '~') path += ch;
+                else { path += L'%'; path += hex[ch >> 4]; path += hex[ch & 15]; }
+            }
+        }
+        if (!HttpGet(L"api.bybit.com", path, L"Bybit metadata", body, error)) return false;
+        std::string next, parseError;
+        if (!BybitNextCursor(body, next, parseError)) { error = Utf8ToWide(parseError); return false; }
+        pages.push_back(body);
+        if (next.empty()) return true;
+        if (next == cursor) break;
+        cursor = std::move(next);
+    }
+    error = L"Bybit metadata pagination incomplete";
+    pages.clear();
+    return false;
+}
+
 bool MarketClient::FetchKraken(const std::wstring& category,
                                 std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) const
 {

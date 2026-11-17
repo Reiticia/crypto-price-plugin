@@ -136,8 +136,10 @@ void PriceItem::DrawItem(void* hdc, int x, int y, int width, int height, bool)
 
 CryptoPricePlugin& CryptoPricePlugin::Instance()
 {
-    static CryptoPricePlugin instance;
-    return instance;
+    // Persistent WebSocket workers must never be joined under the DLL loader
+    // lock. The module is pinned on first stream start; process exit reclaims it.
+    static CryptoPricePlugin* instance = new CryptoPricePlugin();
+    return *instance;
 }
 
 CryptoPricePlugin::CryptoPricePlugin()
@@ -162,7 +164,7 @@ CryptoPricePlugin::CryptoPricePlugin()
 CryptoPricePlugin::~CryptoPricePlugin()
 {
     shuttingDown_ = true;
-    if (worker_.joinable()) worker_.join();
+    streams_.Stop();
 }
 
 IPluginItem* CryptoPricePlugin::GetItem(int index)
@@ -229,7 +231,7 @@ void CryptoPricePlugin::OnExtenedInfo(ExtendedInfoIndex index, const wchar_t* da
     case EI_CONFIG_DIR:
         config_.SetDirectory(data);
         ApplySettings(config_.Load());
-        StartRefresh(true);
+        // Connect lazily on DataRequired; ABI enumeration does not access the network.
         break;
     case EI_DRAW_TASKBAR_WND:
         drawingTaskbar_ = std::wcstol(data, nullptr, 10) != 0;
@@ -258,7 +260,7 @@ void CryptoPricePlugin::OnInitialize(ITrafficMonitor* application)
 
 const wchar_t* CryptoPricePlugin::GetCommandName(int commandIndex)
 {
-    return commandIndex == 0 ? L"立即刷新 Crypto 行情" : nullptr;
+    return commandIndex == 0 ? L"重新连接行情推送" : nullptr;
 }
 
 void CryptoPricePlugin::OnPluginCommand(int commandIndex, void*, void*)
@@ -305,19 +307,28 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
     {
         std::lock_guard<std::mutex> refreshLock(refreshMutex_);
         nextRefresh_ = std::chrono::steady_clock::time_point{};
+        streamStarted_ = false;
     }
+    streams_.Stop();
 }
 
 void CryptoPricePlugin::ApplyPendingResult()
 {
+    const auto now = std::chrono::steady_clock::now();
     PendingResult result;
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
         if (!hasPending_) return;
-        result = std::move(pending_);
+        // Connection errors invalidate cached prices immediately, even with a
+        // long display interval. Successful price updates remain UI-throttled.
+        const bool connectionError = std::any_of(pending_.quotes.begin(), pending_.quotes.end(),
+            [](const QuoteResult& quote) { return !quote.success; });
+        if (now < nextRefresh_ && !connectionError) return;
+        result = pending_;
         hasPending_ = false;
     }
     if (result.generation != generation_.load()) return;
+    nextRefresh_ = now + std::chrono::seconds(settings_.refreshSeconds);
 
     std::lock_guard<std::mutex> lock(settingsMutex_);
     const std::size_t count = (std::min)(result.quotes.size(), settings_.instruments.size());
@@ -330,66 +341,43 @@ void CryptoPricePlugin::ApplyPendingResult()
 void CryptoPricePlugin::StartRefresh(bool force)
 {
     std::lock_guard<std::mutex> refreshLock(refreshMutex_);
-    if (shuttingDown_) return;
-    const auto now = std::chrono::steady_clock::now();
-    if (!force && now < nextRefresh_) return;
-    if (workerRunning_) return;
-    if (worker_.joinable()) worker_.join();
-
+    if (shuttingDown_ || (streamStarted_ && !force)) return;
     Settings snapshot;
     {
         std::lock_guard<std::mutex> lock(settingsMutex_);
         snapshot = settings_;
     }
-    if (snapshot.instruments.empty()) return;
-    nextRefresh_ = now + std::chrono::seconds(snapshot.refreshSeconds);
-    const unsigned long long generation = generation_.load();
-    workerRunning_ = true;
-    worker_ = std::thread(&CryptoPricePlugin::RefreshWorker, this, std::move(snapshot), generation);
-}
-
-void CryptoPricePlugin::RefreshWorker(Settings settings, unsigned long long generation)
-{
-    std::map<std::pair<DataSource, std::wstring>, std::vector<std::size_t>> groups;
-    for (std::size_t index = 0; index < settings.instruments.size(); ++index)
-        groups[{InstrumentSource(settings.instruments[index]), settings.instruments[index].category}].push_back(index);
-
-    std::vector<QuoteResult> results(settings.instruments.size());
-    MarketClient client;
-    for (const auto& [group, indexes] : groups)
-    {
-        if (shuttingDown_) break;
-        std::unordered_map<std::string, Ticker> tickers;
-        std::wstring requestError;
-        const bool success = client.FetchCategory(group.first, group.second, settings.priceType,
-                                                  tickers, requestError);
-        for (const std::size_t index : indexes)
-        {
-            QuoteResult& result = results[index];
-            result.instrument = settings.instruments[index];
-            if (!success)
-            {
-                result.error = requestError;
-                continue;
-            }
-            const auto ticker = tickers.find(WideToAscii(result.instrument.symbol));
-            if (ticker == tickers.end())
-            {
-                result.error = L"未找到该标的，请检查市场类型和交易对";
-                continue;
-            }
-            result.success = true;
-            result.ticker = ticker->second;
-        }
-    }
-
-    if (!shuttingDown_)
+    const auto generation = generation_.load();
+    nextRefresh_ = std::chrono::steady_clock::time_point{};
+    streams_.Stop();
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
-        pending_ = {generation, std::move(results)};
-        hasPending_ = true;
+        pending_ = {generation, {}};
+        for (const auto& instrument : snapshot.instruments)
+            pending_.quotes.push_back({instrument, false, {}, L"等待 WebSocket 行情"});
+        hasPending_ = false;
     }
-    workerRunning_ = false;
+    try
+    {
+        streams_.Start(snapshot, generation, [this](unsigned long long g, const std::vector<StreamQuote>& updates) {
+            std::lock_guard<std::mutex> lock(pendingMutex_);
+            if (g != generation_.load() || pending_.generation != g) return;
+            for (const auto& update : updates)
+            {
+                if (update.index >= pending_.quotes.size()) continue;
+                auto& quote = pending_.quotes[update.index];
+                quote.success = update.success;
+                quote.ticker = update.ticker;
+                quote.error = update.error;
+            }
+            hasPending_ = true;
+        });
+        streamStarted_ = true;
+    }
+    catch (...)
+    {
+        streamStarted_ = false;
+    }
 }
 
 void CryptoPricePlugin::UpdatePlaceholder()
@@ -417,6 +405,11 @@ void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
     }
     item.value_ = SelectPrice(result.ticker, settings.priceType,
                               IsSpot(result.instrument), result.instrument.precision);
+    if (item.value_ == L"--")
+    {
+        item.detail_ = L"WebSocket 已连接，等待所选价格频道快照";
+        return;
+    }
     if (settings.showChange && Supports24HourChange(result.instrument))
         item.value_ += FormatChange(result.ticker.price24hPcnt);
     item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice, result.instrument.precision);

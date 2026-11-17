@@ -3,6 +3,7 @@
 #include "Config.h"
 #include "Json.h"
 #include "PluginInterface.h"
+#include "StreamClient.h"
 
 #include <array>
 #include <atomic>
@@ -48,6 +49,7 @@ class CryptoPricePlugin final : public ITMPlugin
 public:
     static CryptoPricePlugin& Instance();
     ~CryptoPricePlugin();
+    void Shutdown() noexcept { streams_.Shutdown(); }
 
     IPluginItem* GetItem(int index) override;
     void DataRequired() override;
@@ -82,7 +84,6 @@ private:
     void ApplySettings(Settings settings);
     void ApplyPendingResult();
     void StartRefresh(bool force);
-    void RefreshWorker(Settings settings, unsigned long long generation);
     void UpdatePlaceholder();
     void UpdateItem(std::size_t index, const QuoteResult& result, const Settings& settings);
     void RebuildAggregate();
@@ -99,8 +100,8 @@ private:
     bool hasPending_{};
 
     std::mutex refreshMutex_;
-    std::thread worker_;
-    std::atomic<bool> workerRunning_{false};
+    StreamClient streams_;
+    bool streamStarted_{};
     std::atomic<bool> shuttingDown_{false};
     std::atomic<unsigned long long> generation_{1};
     std::chrono::steady_clock::time_point nextRefresh_{};

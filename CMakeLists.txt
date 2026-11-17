@@ -15,6 +15,8 @@ add_library(CryptoPrice SHARED
     src/ExchangeJson.cpp
     src/OptionsWindow.cpp
     src/Tooltip.cpp
+    src/StreamProtocol.cpp
+    src/StreamClient.cpp
     src/dllmain.cpp
 )
 
@@ -90,6 +92,37 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME CryptoPriceOptionsSourceTests COMMAND CryptoPriceOptionsSourceTests)
     set_tests_properties(CryptoPriceOptionsSourceTests PROPERTIES TIMEOUT 15)
+
+    add_executable(CryptoPriceStreamTests tests/StreamTests.cpp src/StreamProtocol.cpp src/Config.cpp)
+    target_include_directories(CryptoPriceStreamTests PRIVATE src)
+    target_compile_features(CryptoPriceStreamTests PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPriceStreamTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    if(MSVC)
+        target_compile_options(CryptoPriceStreamTests PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME CryptoPriceStreamTests COMMAND CryptoPriceStreamTests)
+
+    add_executable(CryptoPriceStreamLifecycleTests tests/StreamLifecycleTests.cpp src/StreamClient.cpp
+        src/StreamProtocol.cpp src/MarketClient.cpp src/Json.cpp src/ExchangeJson.cpp src/Config.cpp)
+    target_include_directories(CryptoPriceStreamLifecycleTests PRIVATE src)
+    target_compile_features(CryptoPriceStreamLifecycleTests PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPriceStreamLifecycleTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(CryptoPriceStreamLifecycleTests PRIVATE winhttp)
+    if(MSVC)
+        target_compile_options(CryptoPriceStreamLifecycleTests PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME CryptoPriceStreamLifecycleTests COMMAND CryptoPriceStreamLifecycleTests)
+    set_tests_properties(CryptoPriceStreamLifecycleTests PROPERTIES TIMEOUT 10)
+
+    add_executable(CryptoPriceStreamLiveSmoke tests/StreamLiveSmoke.cpp src/StreamClient.cpp
+        src/StreamProtocol.cpp src/MarketClient.cpp src/Json.cpp src/ExchangeJson.cpp src/Config.cpp)
+    target_include_directories(CryptoPriceStreamLiveSmoke PRIVATE src)
+    target_compile_features(CryptoPriceStreamLiveSmoke PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPriceStreamLiveSmoke PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(CryptoPriceStreamLiveSmoke PRIVATE winhttp)
+    if(MSVC)
+        target_compile_options(CryptoPriceStreamLiveSmoke PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
 
     add_executable(CryptoPriceSmoke tests/PluginSmoke.cpp)
     target_include_directories(CryptoPriceSmoke PRIVATE src)

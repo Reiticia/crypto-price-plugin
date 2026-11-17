@@ -29,7 +29,10 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 | --- | --- |
 | `src/PluginInterface.h` | TrafficMonitor API v7 ABI |
 | `src/CryptoPricePlugin.*` | 插件入口、显示项、后台调度和格式化 |
-| `src/MarketClient.*` | 通用 HTTP 客户端及三家交易所适配 |
+| `src/MarketClient.*` | REST 设置校验、手动诊断、推送元数据（非周期价格轮询） |
+| `src/StreamClient.*` | 常驻 WinHTTP WebSocket、心跳、重连、跨线程缓存 |
+| `src/StreamProtocol.*` | 五家订阅协议、快照与增量合并 |
+| `src/JsonValue.h` | 严格 JSON 解析器 |
 | `src/Json.*` | Bitget、OKX、Binance 响应解析和符号规范化 |
 | `src/Config.*` | 数据源、标的、价格类型及 INI 持久化 |
 | `src/OptionsWindow.*` | 纯 Win32 设置窗口、后台标的校验及提交控制 |
@@ -41,22 +44,24 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 ## 4. 运行流程
 
 ```text
-TrafficMonitor::DataRequired
-        │
-        ├─ 应用上一轮 pending 结果
-        └─ 到达刷新时间后复制当前 Settings
-                    │
-                    └─ 后台线程按（数据源、市场类别）分组
-                              │
-                              └─ MarketClient
-                                  ├─ Bitget adapter
-                                  ├─ OKX adapter
-                                  └─ Binance adapter
-                                        │
-                                        └─ 统一 Ticker 缓存
+首次 DataRequired / 配置变更 / 手动重连
+        └─ StreamClient 按（交易所、市场）建立常驻连接
+              ├─ 必要时 REST 查询标的元数据（不查询价格）
+              ├─ WebSocket 快照与增量 → 连接私有缓存
+              └─ 按 generation 发布至 pending
+后续 DataRequired → 按显示间隔读取 pending → 更新界面
 ```
 
-设置变化时 generation 递增。旧设置启动的迟到响应会被丢弃，避免切换数据源后短暂显示上一家交易所的数据。
+不再 REST 轮询价格。`RefreshSeconds` 只节流 UI 消费缓存，网络推送持续接收。
+断线立即清空旧价；新连接独立缓存，Bybit 快照前的 delta 被忽略。每 15 秒发心跳，
+75 秒无应用帧或 30 秒未取得任何标的更新则重连；安静／休市时用心跳确认存活。
+重连按 1、2、4…30 秒退避，取价成功后复位，不退回 REST。设置变化递增 generation
+并取消旧 session，停止回调与发布互斥，不在 UI 线程等待网络。
+
+`StreamProtocol` 生成订阅并合并字段；`StreamClient` 使用 WinHTTP WebSocket，处理 UTF-8
+分片、2MB 消息上限、服务端关闭、订阅错误及重订阅。首次网络启动前 pin DLL；单例
+不在 DllMain 析构。宿主没有 pre-unload API，启动推送后不支持进程内热卸载／替换，
+必须退出 TrafficMonitor。进程退出只置原子停止标记，禁止在 loader lock 下 join。
 
 设置窗口添加或更新标的时，通过后台任务按当前数据源、市场类型和价格类型查询行情。只有标的存在且所选价格为有限正数时才修改草稿；现货始终验证最新价。点击确定时重新校验完整列表，同一（数据源、市场类型）只查询一次，避免切换数据源或价格类型后绕过校验。查询失败不提交设置；校验期间禁用编辑和重复提交，取消时丢弃结果并等待后台请求结束后安全关闭窗口。
 
@@ -69,6 +74,8 @@ TrafficMonitor::DataRequired
 | `Bitget` | `bitget` | Bitget |
 | `Okx` | `okx` | OKX |
 | `Binance` | `binance` | Binance |
+| `Kraken` | `kraken` | Kraken / Kraken xStocks |
+| `Bybit` | `bybit` | Bybit |
 
 ### 市场类别
 
@@ -98,6 +105,21 @@ Binance 返回的 `priceChangePercent` 是百分数，解析器会除以 100；O
 
 ## 6. 交易所适配
 
+运行时使用以下 WSS 端点（均为 TLS 443）：
+
+| 数据源 | 端点 | 频道 |
+| --- | --- | --- |
+| Bitget UTA | `wss://ws.bitget.com/v3/ws/public` | `ticker` |
+| OKX | `wss://ws.okx.com/ws/v5/public` | `tickers`、`mark-price`、`index-tickers` |
+| Binance Spot | `wss://stream.binance.com/ws` | `@ticker` |
+| Binance USDⓈ-M / COIN-M | `wss://fstream.binance.com/market/ws` / `wss://dstream.binance.com/market/ws` | `@ticker`、`@markPrice@1s` |
+| Kraken Spot / xStocks | `wss://ws.kraken.com/v2` | `ticker`，trades 触发 |
+| Kraken Futures | `wss://futures.kraken.com/ws/v1` | `ticker`、`heartbeat` |
+| Bybit | `wss://stream.bybit.com/v5/public/{spot,linear,inverse}` | `tickers.{真实标的}` |
+
+下面的 REST 端点仅用于设置校验、显式诊断和元数据，**不是运行时轮询路径**。
+
+
 ### Bitget
 
 ```http
@@ -114,7 +136,7 @@ GET https://www.okx.com/api/v5/public/mark-price?instType=SWAP
 GET https://www.okx.com/api/v5/market/index-tickers?quoteCcy=USDT|USDC|USD
 ```
 
-插件访问 OKX 时按以下顺序回退，适配 DNS 被污染或需要代理出口的网络：
+REST 设置校验访问 OKX 时按以下顺序回退，适配 DNS 被污染或需要代理出口的网络：
 
 1. 直连 `eea.okx.com`、`www.okx.com`（同一套 v5 公共接口），并记住本次运行中可用
    的入口；
@@ -154,7 +176,7 @@ BTCPERP 用 baseCoin+quoteCoin 映射为 BTCUSDC。price24hPcnt 本身是比例�
 `GET https://api.kraken.com/0/public/Ticker?asset_class=tokenized_asset` 返回代币化资产。
 仅解析规范的 `xUSD` 交易对，去掉后缀后按股票代码索引；排除 EUR、USDT 和 SPV 内部别名。
 `c[0]` 为最新成交价；不使用标记价、指数价。`o` 是当日开盘价，不是 24 小时前价格，
-因此不填充 `price24hPcnt`，也不为涨跌幅预留显示宽度。按 `US-STOCK` 分组，一轮只查询一次。
+因此不填充 `price24hPcnt`，也不为涨跌幅预留显示宽度。REST 仅用于设置校验；运行时\n按 `US-STOCK` 建立 WebSocket v2 订阅，AssetPairs 元数据映射 `AAPLx/USD` 等真实标识。
 配置存储原始代码（允许 1–16 位字母），显示时附加 `/USD`，数据源名称显示 Kraken xStocks。
 
 ## 7. 显示项规则
@@ -195,7 +217,7 @@ Precision=-1
 - 每个 `[InstrumentN] DataSource` 可为 `bitget`、`okx`、`binance`、`kraken`、`bybit`；美股规范化为 `kraken`；
 - 缺少独立数据源键时读取旧 `[General] DataSource`，再缺省为 Bitget；保存成功后移除旧全局键；
 - 去重键为（数据源、市场、symbol），精度不影响去重；美股固定 Kraken；
-- `RefreshSeconds` 范围为 2–300；
+- `RefreshSeconds` 范围为 2–300，只节流 UI 更新，不影响 WebSocket 接收频率；
 - `PriceType` 可为 `last`、`mark`、`index`；
 - `Count` 范围为 0–16；
 - `Precision` 为每个标的独立的小数位数（-1 自动，0–10 固定），缺省或脏值回退 -1；

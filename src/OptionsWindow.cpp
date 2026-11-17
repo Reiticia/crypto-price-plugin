@@ -263,7 +263,7 @@ void OptionsWindow::CreateControls()
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"指数价格（仅合约）"));
     SendMessageW(priceType_, CB_SETCURSEL, static_cast<WPARAM>(draft_.priceType), 0);
 
-    AddControl(window_, L"STATIC", L"刷新间隔", 0, 30, 366, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"显示间隔", 0, 30, 366, 65, 20, -1);
     refresh_ = AddControl(window_, L"EDIT", std::to_wstring(draft_.refreshSeconds).c_str(),
                           WS_BORDER | WS_TABSTOP | ES_NUMBER, 100, 362, 44, 25, kRefresh);
     AddControl(window_, L"STATIC", L"秒（2–300）", 0, 150, 366, 105, 20, -1);
@@ -453,7 +453,7 @@ void OptionsWindow::Accept()
     const long seconds = std::wcstol(refresh.data(), &end, 10);
     if (end == refresh.data() || *end != L'\0' || seconds < 2 || seconds > 300)
     {
-        SetStatus(L"刷新间隔必须是 2 到 300 秒之间的整数。 ");
+        SetStatus(L"显示间隔必须是 2 到 300 秒之间的整数（仅控制界面，行情由 WebSocket 推送）。");
         SetFocus(refresh_);
         MessageBeep(MB_ICONWARNING);
         return;
