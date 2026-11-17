@@ -44,6 +44,7 @@ HWND AddControl(HWND parent, const wchar_t* className, const wchar_t* text,
 
 const wchar_t* CategoryCaption(const std::wstring& category)
 {
+    if (category == L"US-STOCK") return L"美股（USD）";
     if (category == L"SPOT") return L"现货";
     if (category == L"USDC-FUTURES") return L"USDC 本位合约";
     if (category == L"COIN-FUTURES") return L"币本位合约";
@@ -55,6 +56,7 @@ int CategoryIndex(const std::wstring& category)
     if (category == L"USDC-FUTURES") return 1;
     if (category == L"COIN-FUTURES") return 2;
     if (category == L"SPOT") return 3;
+    if (category == L"US-STOCK") return 4;
     return 0;
 }
 
@@ -63,6 +65,7 @@ std::wstring CategoryAt(int index)
     if (index == 1) return L"USDC-FUTURES";
     if (index == 2) return L"COIN-FUTURES";
     if (index == 3) return L"SPOT";
+    if (index == 4) return L"US-STOCK";
     return L"USDT-FUTURES";
 }
 }
@@ -170,6 +173,15 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
         case kList:
             if (HIWORD(wParam) == LBN_SELCHANGE) LoadSelection();
             return 0;
+        case kCategory:
+            if (HIWORD(wParam) == CBN_SELCHANGE)
+            {
+                UpdateSourceChoices();
+                SetStatus(SendMessageW(category_, CB_GETCURSEL, 0, 0) == 4 ?
+                    L"美股固定 Kraken xStocks（USD）；输入 AAPL、TSLA 等代码。" :
+                    L"数据源仅作用于当前标的；修改后点击“更新选中项”。");
+            }
+            return 0;
         case kAdd: AddNew(); return 0;
         case kUpdate: UpdateSelected(); return 0;
         case kRemove: RemoveSelected(); return 0;
@@ -192,69 +204,70 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
 
 void OptionsWindow::CreateControls()
 {
-    AddControl(window_, L"STATIC", L"已监控标的（最多 16 个）", 0, 18, 14, 260, 20, -1);
+    AddControl(window_, L"BUTTON", L"标的独立设置（最多 16 个）", BS_GROUPBOX,
+               18, 12, 624, 280, -1);
     list_ = AddControl(window_, L"LISTBOX", L"", WS_BORDER | WS_TABSTOP | WS_VSCROLL | LBS_NOTIFY,
-                       18, 36, 624, 186, kList);
+                       30, 36, 600, 134, kList);
 
-    AddControl(window_, L"STATIC", L"交易对", 0, 18, 238, 52, 20, -1);
+    AddControl(window_, L"STATIC", L"交易对", 0, 30, 194, 52, 20, -1);
     symbol_ = AddControl(window_, L"EDIT", L"", WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL,
-                         74, 234, 176, 25, kSymbol);
+                         88, 190, 162, 25, kSymbol);
     SendMessageW(symbol_, EM_SETLIMITTEXT, 32, 0);
-    AddControl(window_, L"STATIC", L"市场类型", 0, 270, 238, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"市场类型", 0, 270, 194, 65, 20, -1);
     category_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
-                           340, 234, 178, 200, kCategory);
+                           340, 190, 178, 200, kCategory);
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"USDT 本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"USDC 本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"币本位合约"));
     SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"现货"));
+    SendMessageW(category_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"美股（USD）"));
     SendMessageW(category_, CB_SETCURSEL, 0, 0);
 
-    // "小数位数"作用于当前选中标的：留空自动推断，填 0–10 固定显示位数。
-    AddControl(window_, L"STATIC", L"小数位数", 0, 18, 282, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"数据源", 0, 30, 238, 65, 20, -1);
+    dataSource_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
+                             100, 234, 150, 120, kDataSource);
+    UpdateSourceChoices();
+
+    // 小数位数与数据源都只作用于当前标的。
+    AddControl(window_, L"STATIC", L"小数位数", 0, 270, 238, 65, 20, -1);
     precision_ = AddControl(window_, L"EDIT", L"",
                             WS_BORDER | WS_TABSTOP | ES_NUMBER,
-                            88, 278, 44, 25, kPrecision);
+                            340, 234, 44, 25, kPrecision);
     SendMessageW(precision_, EM_SETLIMITTEXT, 4, 0);
-    AddControl(window_, L"STATIC", L"留空自动；0–10 固定（随选中标的保存）",
-               0, 140, 282, 220, 20, -1);
+    AddControl(window_, L"STATIC", L"留空自动，0–10 位",
+               0, 270, 268, 240, 20, -1);
 
     AddControl(window_, L"BUTTON", L"添加新标的", WS_TABSTOP | BS_PUSHBUTTON,
-               530, 233, 112, 27, kAdd);
+               530, 189, 100, 27, kAdd);
     AddControl(window_, L"BUTTON", L"更新选中项", WS_TABSTOP | BS_PUSHBUTTON,
-               530, 267, 112, 27, kUpdate);
+               530, 221, 100, 27, kUpdate);
     AddControl(window_, L"BUTTON", L"删除选中项", WS_TABSTOP | BS_PUSHBUTTON,
-               530, 301, 112, 27, kRemove);
+               530, 253, 100, 27, kRemove);
 
-    AddControl(window_, L"STATIC", L"显示价格", 0, 18, 322, 65, 20, -1);
+    AddControl(window_, L"BUTTON", L"全局设置", BS_GROUPBOX,
+               18, 302, 624, 100, -1);
+    AddControl(window_, L"STATIC", L"显示价格", 0, 30, 328, 65, 20, -1);
     priceType_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
-                            88, 318, 162, 150, kPriceType);
+                            100, 324, 230, 150, kPriceType);
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"最新价格"));
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"标记价格（仅合约）"));
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"指数价格（仅合约）"));
     SendMessageW(priceType_, CB_SETCURSEL, static_cast<WPARAM>(draft_.priceType), 0);
 
-    AddControl(window_, L"STATIC", L"刷新间隔", 0, 270, 322, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"刷新间隔", 0, 30, 366, 65, 20, -1);
     refresh_ = AddControl(window_, L"EDIT", std::to_wstring(draft_.refreshSeconds).c_str(),
-                          WS_BORDER | WS_TABSTOP | ES_NUMBER, 340, 318, 70, 25, kRefresh);
-    AddControl(window_, L"STATIC", L"秒（2–300）", 0, 416, 322, 95, 20, -1);
+                          WS_BORDER | WS_TABSTOP | ES_NUMBER, 100, 362, 44, 25, kRefresh);
+    AddControl(window_, L"STATIC", L"秒（2–300）", 0, 150, 366, 105, 20, -1);
     showChange_ = AddControl(window_, L"BUTTON", L"显示 24 小时涨跌幅",
-                             WS_TABSTOP | BS_AUTOCHECKBOX, 18, 358, 190, 24, kShowChange);
+                             WS_TABSTOP | BS_AUTOCHECKBOX, 270, 362, 360, 24, kShowChange);
     SendMessageW(showChange_, BM_SETCHECK, draft_.showChange ? BST_CHECKED : BST_UNCHECKED, 0);
 
-    AddControl(window_, L"STATIC", L"数据源", 0, 270, 362, 65, 20, -1);
-    dataSource_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
-                             340, 358, 178, 120, kDataSource);
-    SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Bitget"));
-    SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"OKX"));
-    SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Binance"));
-    SendMessageW(dataSource_, CB_SETCURSEL, static_cast<WPARAM>(draft_.dataSource), 0);
-
     status_ = AddControl(window_, L"STATIC", L"输入如 BTCUSDT；BTC/USDT、BTC-USDT 会自动规范化。",
-                         0, 18, 394, 610, 22, kStatus);
+                         0, 18, 412, 624, 22, kStatus);
     AddControl(window_, L"BUTTON", L"确定", WS_TABSTOP | BS_DEFPUSHBUTTON,
-               454, 434, 88, 29, IDOK);
+               454, 442, 88, 29, IDOK);
     AddControl(window_, L"BUTTON", L"取消", WS_TABSTOP | BS_PUSHBUTTON,
-               554, 434, 88, 29, IDCANCEL);
+               554, 442, 88, 29, IDCANCEL);
     RefreshList(draft_.instruments.empty() ? -1 : 0);
 }
 
@@ -264,7 +277,7 @@ void OptionsWindow::RefreshList(int selection)
     for (const Instrument& instrument : draft_.instruments)
     {
         const std::wstring caption = FormatInstrumentSymbol(instrument) + L"    " +
-                                     CategoryCaption(instrument.category);
+                                     CategoryCaption(instrument.category) + L"    " + InstrumentSourceName(instrument);
         SendMessageW(list_, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(caption.c_str()));
     }
     if (selection >= 0 && selection < static_cast<int>(draft_.instruments.size()))
@@ -284,13 +297,33 @@ void OptionsWindow::LoadSelection()
     const int index = SelectedIndex();
     if (index < 0 || index >= static_cast<int>(draft_.instruments.size())) return;
     const Instrument& instrument = draft_.instruments[static_cast<std::size_t>(index)];
-    SetWindowTextW(symbol_, FormatInstrumentSymbol(instrument).c_str());
+    SetWindowTextW(symbol_, (instrument.category == L"US-STOCK" ? instrument.symbol :
+                            FormatInstrumentSymbol(instrument)).c_str());
     SendMessageW(category_, CB_SETCURSEL, CategoryIndex(instrument.category), 0);
+    UpdateSourceChoices();
+    if (instrument.category != L"US-STOCK")
+        SendMessageW(dataSource_, CB_SETCURSEL, static_cast<WPARAM>(instrument.dataSource), 0);
     if (instrument.precision >= 0)
         SetWindowTextW(precision_, std::to_wstring(instrument.precision).c_str());
     else
         SetWindowTextW(precision_, L"");
-    SetStatus(L"修改后点击“更新选中项”；要保留它并增加新标的，请点击“添加新标的”。");
+    SetStatus(instrument.category == L"US-STOCK" ?
+        L"Kraken xStocks，USD 计价，仅最新价；修改后点击“更新选中项”。" :
+        L"修改后点击“更新选中项”；要保留它并增加新标的，请点击“添加新标的”。");
+}
+
+void OptionsWindow::UpdateSourceChoices()
+{
+    const bool stocks = SendMessageW(category_, CB_GETCURSEL, 0, 0) == 4;
+    const int previous = static_cast<int>(SendMessageW(dataSource_, CB_GETCURSEL, 0, 0));
+    SendMessageW(dataSource_, CB_RESETCONTENT, 0, 0);
+    if (stocks)
+        SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"Kraken xStocks"));
+    else
+        for (const wchar_t* name : {L"Bitget", L"OKX", L"Binance"})
+            SendMessageW(dataSource_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(name));
+    SendMessageW(dataSource_, CB_SETCURSEL, stocks ? 0 : (std::max)(0, (std::min)(previous, 2)), 0);
+    EnableWindow(dataSource_, !stocks && !validation_.valid());
 }
 
 int OptionsWindow::ReadPrecisionInput() const
@@ -311,15 +344,19 @@ Instrument OptionsWindow::ReadInstrument() const
     std::array<wchar_t, 64> symbol{};
     GetWindowTextW(symbol_, symbol.data(), static_cast<int>(symbol.size()));
     const int categoryIndex = static_cast<int>(SendMessageW(category_, CB_GETCURSEL, 0, 0));
-    return {CategoryAt(categoryIndex), NormalizeSymbol(symbol.data()), ReadPrecisionInput()};
+    const std::wstring category = CategoryAt(categoryIndex);
+    return {category, category == L"US-STOCK" ? NormalizeStockSymbol(symbol.data()) :
+            NormalizeSymbol(symbol.data()), ReadPrecisionInput(),
+            category == L"US-STOCK" ? DataSource::Kraken :
+            static_cast<DataSource>((std::max)(0, static_cast<int>(SendMessageW(dataSource_, CB_GETCURSEL, 0, 0))))};
 }
 
 void OptionsWindow::AddNew()
 {
     Instrument instrument = ReadInstrument();
-    if (!IsValidSymbol(instrument.symbol))
+    if (!IsValidInstrumentSymbol(instrument))
     {
-        SetStatus(L"交易对格式无效：只能使用 3–32 位英文字母或数字。 ");
+        SetStatus(L"代码格式无效：美股为 1–16 位字母，其他交易对为 3–32 位字母或数字。");
         MessageBeep(MB_ICONWARNING);
         return;
     }
@@ -357,9 +394,9 @@ void OptionsWindow::UpdateSelected()
         return;
     }
     Instrument instrument = ReadInstrument();
-    if (!IsValidSymbol(instrument.symbol))
+    if (!IsValidInstrumentSymbol(instrument))
     {
-        SetStatus(L"交易对格式无效：只能使用 3–32 位英文字母或数字。 ");
+        SetStatus(L"代码格式无效：美股为 1–16 位字母，其他交易对为 3–32 位字母或数字。");
         MessageBeep(MB_ICONWARNING);
         return;
     }
@@ -419,9 +456,6 @@ void OptionsWindow::BeginValidation(const Instrument* instrument, int selection,
     pendingSettings_ = draft_;
     const int price = static_cast<int>(SendMessageW(priceType_, CB_GETCURSEL, 0, 0));
     pendingSettings_.priceType = price == 1 ? PriceType::Mark : price == 2 ? PriceType::Index : PriceType::Last;
-    const int source = static_cast<int>(SendMessageW(dataSource_, CB_GETCURSEL, 0, 0));
-    pendingSettings_.dataSource = source == 1 ? DataSource::Okx :
-                                  source == 2 ? DataSource::Binance : DataSource::Bitget;
     pendingSettings_.showChange = SendMessageW(showChange_, BM_GETCHECK, 0, 0) == BST_CHECKED;
     if (instrument)
     {
@@ -499,6 +533,8 @@ void OptionsWindow::SetValidationBusy(bool busy)
     for (int id : {kList, kSymbol, kCategory, kAdd, kRemove, kPriceType, kRefresh,
                    kShowChange, kUpdate, kDataSource, kPrecision, IDOK})
         EnableWindow(GetDlgItem(window_, id), !busy);
+    if (!busy && SendMessageW(category_, CB_GETCURSEL, 0, 0) == 4)
+        EnableWindow(dataSource_, FALSE);
 }
 
 void OptionsWindow::RequestClose()

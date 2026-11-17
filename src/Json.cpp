@@ -180,6 +180,119 @@ bool IsIpv4Literal(std::string_view value)
 }
 }
 
+bool ParseKrakenStockResponse(const std::string& json,
+                              std::unordered_map<std::string, Ticker>& tickers,
+                              std::string& error)
+{
+    tickers.clear();
+    // Scan the result object's direct members, respecting strings and nested arrays/objects.
+    const auto skipSpace = [&](std::size_t& cursor) {
+        while (cursor < json.size() && std::isspace(static_cast<unsigned char>(json[cursor]))) ++cursor;
+    };
+    const auto containerEnd = [&](std::size_t start) -> std::size_t {
+        std::vector<char> stack;
+        bool quoted = false;
+        bool escaped = false;
+        for (std::size_t cursor = start; cursor < json.size(); ++cursor)
+        {
+            const char ch = json[cursor];
+            if (quoted)
+            {
+                if (escaped) escaped = false;
+                else if (ch == '\\') escaped = true;
+                else if (ch == '"') quoted = false;
+                continue;
+            }
+            if (ch == '"') quoted = true;
+            else if (ch == '{' || ch == '[') stack.push_back(ch);
+            else if (ch == '}' || ch == ']')
+            {
+                if (stack.empty() || (ch == '}' ? stack.back() != '{' : stack.back() != '['))
+                    return std::string::npos;
+                stack.pop_back();
+                if (stack.empty()) return cursor;
+            }
+        }
+        return std::string::npos;
+    };
+    const auto fail = [&](const char* message) {
+        tickers.clear();
+        error = message;
+        return false;
+    };
+    std::size_t root = 0;
+    skipSpace(root);
+    if (root >= json.size() || json[root] != '{') return fail("Kraken: invalid response object");
+    const std::size_t rootEnd = containerEnd(root);
+    if (rootEnd == std::string::npos) return fail("Kraken: truncated response");
+    std::size_t afterRoot = rootEnd + 1;
+    skipSpace(afterRoot);
+    if (afterRoot != json.size()) return fail("Kraken: trailing response data");
+    const std::size_t errorKey = json.find("\"error\"");
+    if (errorKey == std::string::npos) return fail("Kraken: missing error array");
+    std::size_t position = json.find(':', errorKey);
+    if (position == std::string::npos) return fail("Kraken: invalid response");
+    ++position;
+    skipSpace(position);
+    if (position >= json.size() || json[position++] != '[') return fail("Kraken: invalid error array");
+    skipSpace(position);
+    if (position >= json.size() || json[position] != ']') return fail("Kraken: API returned an error");
+    const std::size_t resultKey = json.find("\"result\"", position);
+    if (resultKey == std::string::npos) return fail("Kraken: missing result");
+    position = json.find(':', resultKey);
+    if (position == std::string::npos) return fail("Kraken: invalid result");
+    ++position;
+    skipSpace(position);
+    if (position >= json.size() || json[position] != '{') return fail("Kraken: invalid result object");
+    const std::size_t resultEnd = containerEnd(position);
+    if (resultEnd == std::string::npos) return fail("Kraken: truncated result");
+    ++position;
+    skipSpace(position);
+    while (position < resultEnd)
+    {
+        if (json[position++] != '"') return fail("Kraken: invalid pair name");
+        const std::size_t keyStart = position;
+        const std::size_t keyEnd = json.find('"', position);
+        if (keyEnd == std::string::npos) return fail("Kraken: invalid pair name");
+        const std::string pair = json.substr(keyStart, keyEnd - keyStart);
+        position = keyEnd + 1;
+        skipSpace(position);
+        if (position >= resultEnd || json[position++] != ':') return fail("Kraken: missing pair value");
+        skipSpace(position);
+        if (position >= resultEnd || json[position] != '{') return fail("Kraken: invalid ticker");
+        const std::size_t end = containerEnd(position);
+        if (end == std::string::npos || end > resultEnd) return fail("Kraken: truncated ticker");
+        constexpr std::string_view suffix = "xUSD";
+        if (pair.size() > suffix.size() &&
+            pair.compare(pair.size() - suffix.size(), suffix.size(), suffix) == 0)
+        {
+            Ticker ticker;
+            ticker.symbol = pair.substr(0, pair.size() - suffix.size());
+            const std::string_view object(json.data() + position, end - position + 1);
+            const std::size_t closeKey = object.find("\"c\"");
+            std::size_t array = closeKey == std::string_view::npos ? closeKey : object.find(':', closeKey);
+            if (array == std::string_view::npos) return fail("Kraken: missing last trade");
+            ++array;
+            while (array < object.size() && std::isspace(static_cast<unsigned char>(object[array]))) ++array;
+            if (array >= object.size() || object[array] != '[') return fail("Kraken: invalid last trade array");
+            // Reuse the quoted-string reader on the first element of the c (last trade) array.
+            const std::string last = "{\"last\":" + std::string(object.substr(array + 1));
+            if (!ExtractString(last, "last", ticker.lastPrice)) return fail("Kraken: invalid last trade");
+            // o is today's open, not the open 24 hours ago. Leave price24hPcnt empty.
+            tickers[ticker.symbol] = std::move(ticker);
+        }
+        position = end + 1;
+        skipSpace(position);
+        if (position == resultEnd) break;
+        if (json[position++] != ',') return fail("Kraken: invalid ticker separator");
+        skipSpace(position);
+        if (position == resultEnd) return fail("Kraken: trailing ticker separator");
+    }
+    if (tickers.empty()) return fail("Kraken: no USD xStocks ticker returned");
+    error.clear();
+    return true;
+}
+
 std::vector<std::string> ParseDohIpv4Addresses(const std::string& json)
 {
     std::vector<std::string> addresses;

@@ -17,6 +17,7 @@ CryptoPrice.dll
 | 数据源 | 域名 |
 | --- | --- |
 | Bitget | `api.bitget.com` |
+| 美股（USD，Kraken xStocks） | `api.kraken.com` |
 | OKX | `eea.okx.com`、`www.okx.com` |
 | Binance 现货 | `api.binance.com` |
 | Binance USDT/USDC 合约 | `fapi.binance.com` |
@@ -24,22 +25,26 @@ CryptoPrice.dll
 
 插件只访问公共行情接口，不需要配置 API Key、Secret 或 Passphrase。
 
+美股选择“美股（USD）”，输入 `AAPL`、`TSLA` 等代码。该市场固定使用 Kraken xStocks
+的美元最新价，不使用其他标的的数据源或全局合约价格类型，也不显示 24 小时涨跌幅。行情属于代币化美股，
+不是证券交易所原生行情；USD 与 USDT 不混用。
+
 ## 3. 发布构建
 
 x64：
 
 ```powershell
-cmake -S . -B build-x64 -A x64
-cmake --build build-x64 --config Release
-ctest --test-dir build-x64 -C Release --output-on-failure
+cmake --preset x64
+cmake --build --preset x64-release
+ctest --preset x64-release
 ```
 
 Win32：
 
 ```powershell
-cmake -S . -B build-win32 -A Win32
-cmake --build build-win32 --config Release
-ctest --test-dir build-win32 -C Release --output-on-failure
+cmake --preset win32
+cmake --build --preset win32-release
+ctest --preset win32-release
 ```
 
 工作流按架构生成发布压缩包：
@@ -54,7 +59,7 @@ CryptoPrice-win32.zip
 `SHA256SUMS.txt` 记录两个压缩包的 SHA-256。手动发布前也可记录 DLL 哈希：
 
 ```powershell
-Get-FileHash .\build-x64\Release\CryptoPrice.dll -Algorithm SHA256
+Get-FileHash .\build\x64\Release\CryptoPrice.dll -Algorithm SHA256
 ```
 
 ## 4. 首次安装
@@ -93,29 +98,32 @@ CryptoPrice.ini
 
 ```ini
 [General]
-DataSource=binance
 RefreshSeconds=5
 ShowChange=1
 PriceType=mark
 Count=2
 
 [Instrument0]
+DataSource=binance
 Category=USDT-FUTURES
 Symbol=BTCUSDT
 Precision=2
 
 [Instrument1]
+DataSource=okx
 Category=SPOT
 Symbol=ETHUSDT
 Precision=-1
 ```
 
-`DataSource` 支持 `bitget`、`okx`、`binance`；`Precision` 为每个标的独立的小数位数（-1 自动，0–10 固定）。
+`DataSource` 与 `Precision` 都是每个标的独立配置：数据源为 `bitget`、`okx`、`binance`，
+美股固定为 `kraken`；小数位数为 -1 自动、0–10 固定。旧版全局 `[General] DataSource`
+在加载时作为缺少独立键的标的默认值，保存成功后自动迁移，无需手改 INI。
 
 ## 7. 部署后验证
 
 - 插件管理显示“Crypto 行情”2.0.0；
-- 切换数据源后汇总标签同步变化；
+- 每个标的使用自己设置的数据源，标签显示交易所；混合来源时汇总标签显示“多源”；
 - 合约显示 `BTCUSDT`，现货显示 `BTC/USDT`；
 - 最新价、标记价、指数价符合所选设置；
 - 现货在选择标记价或指数价时仍显示最新价；
@@ -134,6 +142,7 @@ Precision=-1
 
 | 现象 | 原因和处理 |
 | --- | --- |
+| 反复弹出“遇到不适当的参数” | TrafficMonitor 1.85.1 合并悬停提示后超过 MFC 的 1024 字符上限；升级到精简提示的插件版本。其他插件也可能占用该上限，仍超限时关闭主窗口和任务栏的鼠标提示，或减少其他插件提示长度 |
 | 插件管理中没有插件 | 检查 DLL 路径及 x64/Win32 架构 |
 | Windows 错误 193 | DLL 与 TrafficMonitor 架构不一致 |
 | 切换数据源后仍显示旧标签 | 确认已点击“确定”，必要时重启 TrafficMonitor |

@@ -7,7 +7,7 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 核心约束：
 
 - 最多配置 16 个标的；
-- 数据源为全局设置，切换后所有标的使用同一家交易所；
+- 数据源按标的独立设置；`US-STOCK` 固定使用 Kraken xStocks 的 USD 交易对；
 - “显示价格”选项全局作用于所有合约，可选择最新价格、标记价格或指数价格；现货只显示最新成交价；
 - 合约支持最新价、标记价和指数价；
 - 网络请求必须在后台线程执行；
@@ -18,7 +18,7 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 - Windows 10 或更高版本；
 - Visual Studio 2022 C++ 桌面开发工作负载；
 - Windows 10/11 SDK；
-- CMake 3.20 或更高版本；
+- CMake 3.21 或更高版本；
 - C++17。
 
 运行时只依赖 WinHTTP、User32、GDI32 和 Comctl32，不使用 MFC 或第三方 JSON 库。
@@ -46,7 +46,7 @@ TrafficMonitor::DataRequired
         ├─ 应用上一轮 pending 结果
         └─ 到达刷新时间后复制当前 Settings
                     │
-                    └─ 后台线程按市场类别分组
+                    └─ 后台线程按（数据源、市场类别）分组
                               │
                               └─ MarketClient
                                   ├─ Bitget adapter
@@ -58,7 +58,7 @@ TrafficMonitor::DataRequired
 
 设置变化时 generation 递增。旧设置启动的迟到响应会被丢弃，避免切换数据源后短暂显示上一家交易所的数据。
 
-设置窗口添加或更新标的时，通过后台任务按当前数据源、市场类型和价格类型查询行情。只有标的存在且所选价格为有限正数时才修改草稿；现货始终验证最新价。点击确定时重新校验完整列表，同一市场只查询一次，避免切换数据源或价格类型后绕过校验。查询失败不提交设置；校验期间禁用编辑和重复提交，取消时丢弃结果并等待后台请求结束后安全关闭窗口。
+设置窗口添加或更新标的时，通过后台任务按当前数据源、市场类型和价格类型查询行情。只有标的存在且所选价格为有限正数时才修改草稿；现货始终验证最新价。点击确定时重新校验完整列表，同一（数据源、市场类型）只查询一次，避免切换数据源或价格类型后绕过校验。查询失败不提交设置；校验期间禁用编辑和重复提交，取消时丢弃结果并等待后台请求结束后安全关闭窗口。
 
 ## 5. 统一数据模型
 
@@ -75,6 +75,7 @@ TrafficMonitor::DataRequired
 | 内部类别 | 含义 | 标准输入 |
 | --- | --- | --- |
 | `SPOT` | 现货 | `BTCUSDT` 或 `BTC/USDT` |
+| `US-STOCK` | 代币化美股／ETF（Kraken xStocks） | `AAPL`、`TSLA` 或 `AAPL/USD` |
 | `USDT-FUTURES` | USDT 本位永续 | `BTCUSDT` |
 | `USDC-FUTURES` | USDC 本位永续 | `BTCUSDC` |
 | `COIN-FUTURES` | 币本位永续 | `BTCUSD` |
@@ -135,12 +136,20 @@ GET https://dapi.binance.com/dapi/v1/premiumIndex
 
 USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` 永续，例如 `BTCUSD_PERP` 规范化成 `BTCUSD`，日期交割合约不会混入。
 
+### Kraken xStocks 美股
+
+`GET https://api.kraken.com/0/public/Ticker?asset_class=tokenized_asset` 返回代币化资产。
+仅解析规范的 `xUSD` 交易对，去掉后缀后按股票代码索引；排除 EUR、USDT 和 SPV 内部别名。
+`c[0]` 为最新成交价；不使用标记价、指数价。`o` 是当日开盘价，不是 24 小时前价格，
+因此不填充 `price24hPcnt`，也不为涨跌幅预留显示宽度。按 `US-STOCK` 分组，一轮只查询一次。
+配置存储原始代码（允许 1–16 位字母），显示时附加 `/USD`，数据源名称显示 Kraken xStocks。
+
 ## 7. 显示项规则
 
 - `GetItem(0)` 是汇总项，ID 为 `CryptoPrice0`。
 - `GetItem(1..N)` 是各标的独立项，ID 使用 `CryptoPriceItem0..15`；未配置槽位不会注册。
 - TrafficMonitor 只在加载插件时枚举一次显示项，且没有动态增删显示项的插件接口。因此运行期间修改标的数量后，需要重启 TrafficMonitor 才能让“显示设置”的项目数量同步。
-- 汇总项标签会随数据源显示为 `Bitget:`、`OKX:` 或 `Binance:`。
+- 单一来源的汇总标签显示该交易所，混合来源显示“多源”；各标的标签带交易所，避免同名交易对混淆。
 - `GetItemValueText()` 只返回缓存，不能访问网络。
 - 没有配置标的时汇总项仍返回占位内容。
 
@@ -150,18 +159,19 @@ USDⓈ-M 接口同时承载 USDT 和 USDC 合约。币本位只保留 `_PERP` �
 
 ```ini
 [General]
-DataSource=okx
 RefreshSeconds=5
 ShowChange=1
 PriceType=mark
 Count=2
 
 [Instrument0]
+DataSource=okx
 Category=USDT-FUTURES
 Symbol=BTCUSDT
 Precision=2
 
 [Instrument1]
+DataSource=binance
 Category=SPOT
 Symbol=ETHUSDT
 Precision=-1
@@ -169,7 +179,9 @@ Precision=-1
 
 规则：
 
-- `DataSource` 可为 `bitget`、`okx`、`binance`；
+- 每个 `[InstrumentN] DataSource` 可为 `bitget`、`okx`、`binance`；美股规范化为 `kraken`；
+- 缺少独立数据源键时读取旧 `[General] DataSource`，再缺省为 Bitget；保存成功后移除旧全局键；
+- 去重键为（数据源、市场、symbol），精度不影响去重；美股固定 Kraken；
 - `RefreshSeconds` 范围为 2–300；
 - `PriceType` 可为 `last`、`mark`、`index`；
 - `Count` 范围为 0–16；
@@ -184,15 +196,15 @@ Visual Studio 生成器创建工程，再由 MSBuild 调用 MSVC 编译器；当
 x64：
 
 ```powershell
-cmake -S . -B build-x64 -A x64
-cmake --build build-x64 --config Release
+cmake --preset x64
+cmake --build --preset x64-release
 ```
 
 Win32：
 
 ```powershell
-cmake -S . -B build-win32 -A Win32
-cmake --build build-win32 --config Release
+cmake --preset win32
+cmake --build --preset win32-release
 ```
 
 产物为 `CryptoPrice.dll`。插件 DLL 与 TrafficMonitor 必须使用相同架构。

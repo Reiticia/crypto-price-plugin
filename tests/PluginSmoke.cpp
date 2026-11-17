@@ -1,4 +1,5 @@
 #include "PluginInterface.h"
+#include "Tooltip.h"
 
 #include <Windows.h>
 
@@ -18,9 +19,9 @@ bool HasTwoDecimalPrice(const std::wstring& value)
 
 int wmain(int argumentCount, wchar_t** arguments)
 {
-    if (argumentCount < 2 || argumentCount > 4)
+    if (argumentCount < 2 || argumentCount > 5)
     {
-        std::cerr << "Usage: CryptoPriceSmoke <plugin.dll> [config-dir] [--live|--no-change]\n";
+        std::cerr << "Usage: CryptoPriceSmoke <plugin.dll> [config-dir] [--live] [--no-change|--stocks|--mixed-sources]\n";
         return 2;
     }
     HMODULE module = LoadLibraryW(arguments[1]);
@@ -36,11 +37,24 @@ int wmain(int argumentCount, wchar_t** arguments)
                  plugin->GetItem(0)->GetItemId() && plugin->GetInfo(ITMPlugin::TMI_NAME);
     bool live = false;
     bool expectNoChange = false;
+    bool stocks = false;
+    bool mixed = false;
+    for (int index = 2; index < argumentCount; ++index)
+    {
+        if (std::wstring(arguments[index]) == L"--stocks") stocks = true;
+        if (std::wstring(arguments[index]) == L"--mixed-sources") mixed = true;
+    }
     for (int index = 2; valid && index < argumentCount; ++index)
     {
         if (std::wstring(arguments[index]) == L"--live")
         {
             live = true;
+            continue;
+        }
+        if (std::wstring(arguments[index]) == L"--mixed-sources") continue;
+        if (std::wstring(arguments[index]) == L"--stocks")
+        {
+            expectNoChange = true;
             continue;
         }
         if (std::wstring(arguments[index]) == L"--no-change")
@@ -54,9 +68,16 @@ int wmain(int argumentCount, wchar_t** arguments)
         valid = plugin->GetItem(1) && plugin->GetItem(2) && !plugin->GetItem(3) &&
                 !plugin->GetItem(0)->IsCustomDraw() &&
                 plugin->GetItem(1)->IsCustomDraw() && plugin->GetItem(2)->IsCustomDraw() &&
-                aggregate.find(L"BTCUSDT") != std::wstring::npos &&
-                aggregate.find(L"ETH/USDT") != std::wstring::npos;
+                aggregate.find(stocks ? L"AAPL/USD" : L"BTCUSDT") != std::wstring::npos &&
+                aggregate.find(stocks ? L"TSLA/USD" : L"ETH/USDT") != std::wstring::npos;
+        if (valid && stocks)
+            valid = std::wstring(plugin->GetItem(0)->GetItemLableText()).find(L"Kraken") != std::wstring::npos &&
+                    std::wstring(plugin->GetItem(1)->GetItemName()).find(L"Kraken xStocks") != std::wstring::npos;
     }
+    if (valid && mixed)
+        valid = std::wstring(plugin->GetItem(1)->GetItemName()).find(L"Binance") != std::wstring::npos &&
+                std::wstring(plugin->GetItem(2)->GetItemName()).find(L"OKX") != std::wstring::npos &&
+                std::wstring(plugin->GetItem(0)->GetItemLableText()).find(L"多源") != std::wstring::npos;
     if (valid && plugin->GetItem(1))
     {
         for (int index = 0; index < 3; ++index)
@@ -71,6 +92,8 @@ int wmain(int argumentCount, wchar_t** arguments)
             }
         }
     }
+    if (valid)
+        valid = std::wstring(plugin->GetTooltipInfo()).size() <= cryptoprice::kMaxTooltipLength;
     if (valid)
         std::wcout << L"Loaded: " << plugin->GetInfo(ITMPlugin::TMI_NAME) << L" (API "
                    << plugin->GetAPIVersion() << L")\n";

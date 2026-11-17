@@ -13,6 +13,7 @@ enum class DataSource
     Bitget,
     Okx,
     Binance,
+    Kraken,
 };
 
 enum class PriceType
@@ -28,17 +29,18 @@ struct Instrument
     std::wstring symbol{L"BTCUSDT"};
     // 该标的的价格小数位数：-1 表示自动（按行情价格字符串推断）；0..10 表示固定位数。
     int precision{-1};
+    DataSource dataSource{DataSource::Bitget};
 
     bool operator==(const Instrument& other) const
     {
-        return category == other.category && symbol == other.symbol;
+        return category == other.category && symbol == other.symbol &&
+            (category == L"US-STOCK" || dataSource == other.dataSource);
     }
 };
 
 struct Settings
 {
     std::vector<Instrument> instruments{{L"USDT-FUTURES", L"BTCUSDT"}};
-    DataSource dataSource{DataSource::Bitget};
     int refreshSeconds{5};
     PriceType priceType{PriceType::Last};
     bool showChange{true};
@@ -49,6 +51,10 @@ int InferPricePrecision(const std::string& raw);
 
 std::wstring NormalizeSymbol(std::wstring value);
 bool IsValidSymbol(const std::wstring& value);
+std::wstring NormalizeStockSymbol(std::wstring value);
+bool IsValidInstrumentSymbol(const Instrument& instrument);
+DataSource InstrumentSource(const Instrument& instrument);
+const wchar_t* InstrumentSourceName(const Instrument& instrument);
 std::wstring FormatInstrumentSymbol(const Instrument& instrument);
 const wchar_t* DataSourceKey(DataSource source);
 const wchar_t* DataSourceName(DataSource source);

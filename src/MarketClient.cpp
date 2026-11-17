@@ -321,6 +321,27 @@ bool MarketClient::FetchCategory(DataSource source, const std::wstring& category
                                  std::unordered_map<std::string, Ticker>& tickers,
                                  std::wstring& error) const
 {
+    if (category == L"US-STOCK")
+    {
+        std::string body;
+        tickers.clear();
+        if (!HttpGet(L"api.kraken.com", L"/0/public/Ticker?asset_class=tokenized_asset",
+                     L"Kraken xStocks", body, error)) return false;
+        std::string parseError;
+        if (!ParseKrakenStockResponse(body, tickers, parseError))
+        {
+            error = Utf8ToWide(parseError);
+            return false;
+        }
+        error.clear();
+        return true;
+    }
+    if (source == DataSource::Kraken)
+    {
+        tickers.clear();
+        error = L"Kraken xStocks 仅支持美股（USD）市场。";
+        return false;
+    }
     switch (source)
     {
     case DataSource::Okx: return FetchOkx(category, priceType, tickers, error);

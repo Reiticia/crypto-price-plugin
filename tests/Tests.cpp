@@ -1,6 +1,7 @@
 #include "Config.h"
 #include "Json.h"
 #include "InstrumentValidation.h"
+#include "Tooltip.h"
 
 #include <Windows.h>
 
@@ -41,7 +42,7 @@ void TestInstrumentValidation()
     CategoryFetcher fetch = [&](DataSource source, const std::wstring& category, PriceType type,
                                 std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) {
         ++calls;
-        Check(source == settings.dataSource, "validate selected data source");
+        Check(source == InstrumentSource(settings.instruments.front()), "validate per-instrument data source");
         Check(type == settings.priceType, "validate selected price type");
         Check(!category.empty(), "validate selected category");
         tickers = quotes;
@@ -50,7 +51,7 @@ void TestInstrumentValidation()
     };
     for (DataSource source : {DataSource::Bitget, DataSource::Okx, DataSource::Binance})
     {
-        settings.dataSource = source;
+        for (auto& instrument : settings.instruments) instrument.dataSource = source;
         for (PriceType type : {PriceType::Last, PriceType::Mark, PriceType::Index})
         {
             settings.priceType = type;
@@ -99,6 +100,40 @@ void TestInstrumentValidation()
     Check(ValidateInstruments(settings, fetch).empty() && calls == 2, "validate mixed categories separately");
     settings.instruments[0].symbol = L"BAD$SYMBOL";
     Check(!ValidateInstruments(settings, fetch).empty(), "reject invalid symbol without trusting quotes");
+    settings.instruments = {{L"US-STOCK", L"F"}, {L"US-STOCK", L"TSLA"}};
+    quotes["F"].lastPrice = "12.34";
+    quotes["TSLA"].lastPrice = "380.11";
+    for (PriceType type : {PriceType::Last, PriceType::Mark, PriceType::Index})
+    {
+        settings.priceType = type;
+        calls = 0;
+        Check(ValidateInstruments(settings, fetch).empty() && calls == 1,
+              "stocks use last price and allow short ticker codes");
+    }
+    quotes.erase("TSLA");
+    Check(ValidateInstruments(settings, fetch).find(L"Kraken xStocks") != std::wstring::npos,
+          "missing stock identifies actual exchange");
+    settings.instruments[0].symbol = L"F$";
+    calls = 0;
+    Check(!ValidateInstruments(settings, fetch).empty() && calls == 0, "reject invalid stock code");
+    settings.instruments = {{L"USDT-FUTURES", L"BTCUSDT", 2, DataSource::Bitget},
+                            {L"USDT-FUTURES", L"BTCUSDT", 2, DataSource::Binance},
+                            {L"USDT-FUTURES", L"ETHUSDT", 2, DataSource::Bitget}};
+    Check(!(settings.instruments[0] == settings.instruments[1]), "same symbol on different sources is not duplicate");
+    int bitgetCalls = 0, binanceCalls = 0;
+    settings.priceType = PriceType::Last;
+    CategoryFetcher mixedFetch = [&](DataSource source, const std::wstring&, PriceType,
+                                    std::unordered_map<std::string, Ticker>& tickers, std::wstring&) {
+        if (source == DataSource::Bitget) ++bitgetCalls;
+        else if (source == DataSource::Binance) ++binanceCalls;
+        tickers["BTCUSDT"].lastPrice = source == DataSource::Bitget ? "100" : "200";
+        if (source == DataSource::Bitget) tickers["ETHUSDT"].lastPrice = "300";
+        return true;
+    };
+    Check(ValidateInstruments(settings, mixedFetch).empty() && bitgetCalls == 1 && binanceCalls == 1,
+          "fetch each source/category pair once");
+    settings.instruments[1].symbol = L"ETHUSDT";
+    Check(!ValidateInstruments(settings, mixedFetch).empty(), "do not reuse another exchange quote for missing symbol");
     settings.instruments.clear();
     calls = 0;
     Check(ValidateInstruments(settings, fetch).empty() && calls == 0, "empty list can save without network");
@@ -115,6 +150,17 @@ int main()
           "futures display symbol");
     Check(cryptoprice::FormatInstrumentSymbol({L"SPOT", L"BTCUSDT"}) == L"BTC/USDT",
           "spot display symbol");
+    Check(cryptoprice::NormalizeStockSymbol(L" aapl ") == L"AAPL", "normalize stock code");
+    Check(cryptoprice::NormalizeStockSymbol(L"TSLA/USD") == L"TSLA", "normalize USD stock pair");
+    Check(cryptoprice::NormalizeStockSymbol(L"AAPLx/USD") == L"AAPL", "normalize xStocks pair");
+    Check(cryptoprice::NormalizeStockSymbol(L"X/USD") == L"X", "retain single letter X stock");
+    Check(cryptoprice::NormalizeStockSymbol(L"NFLX/USD") == L"NFLX", "retain stock code ending in X");
+    Check(cryptoprice::NormalizeStockSymbol(L"NFLXx/USD") == L"NFLX", "remove only tokenization x suffix");
+    Check(cryptoprice::IsValidInstrumentSymbol({L"US-STOCK", L"F"}), "allow one-letter stock");
+    Check(!cryptoprice::IsValidInstrumentSymbol({L"US-STOCK", L""}), "reject empty stock");
+    Check(!cryptoprice::IsValidInstrumentSymbol({L"US-STOCK", L"AAPL1"}), "reject nonletter stock code");
+    Check(cryptoprice::FormatInstrumentSymbol({L"US-STOCK", L"AAPL"}) == L"AAPL/USD",
+          "stock displays actual USD quote currency");
     Check(cryptoprice::DataSourceFromKey(L"okx") == cryptoprice::DataSource::Okx, "parse OKX source");
     Check(cryptoprice::DataSourceFromKey(L"binance") == cryptoprice::DataSource::Binance,
           "parse Binance source");
@@ -169,6 +215,33 @@ int main()
     Check(dirty.instruments[0].precision == -1 &&
               dirty.instruments[1].precision == -1,
           "dirty precision key falls back to auto per instrument");
+    two.instruments = {{L"US-STOCK", L"F", 2}, {L"US-STOCK", L"AAPL", -1}};
+    Check(config.Save(two), "save USD stocks");
+    const auto loadedStocks = config.Load();
+    Check(loadedStocks.instruments.size() == 2 && loadedStocks.instruments[0].symbol == L"F" &&
+          loadedStocks.instruments[0].category == L"US-STOCK" &&
+          loadedStocks.instruments[0].precision == 2 && loadedStocks.instruments[1].symbol == L"AAPL",
+          "round-trip stocks category, short code and precision");
+    WritePrivateProfileStringW(L"General", L"DataSource", L"binance", config.Path().c_str());
+    WritePrivateProfileStringW(L"Instrument0", L"Category", L"USDT-FUTURES", config.Path().c_str());
+    WritePrivateProfileStringW(L"Instrument0", L"Symbol", L"BTCUSDT", config.Path().c_str());
+    WritePrivateProfileStringW(L"Instrument0", L"DataSource", nullptr, config.Path().c_str());
+    WritePrivateProfileStringW(L"Instrument1", L"Category", L"SPOT", config.Path().c_str());
+    WritePrivateProfileStringW(L"Instrument1", L"Symbol", L"ETHUSDT", config.Path().c_str());
+    WritePrivateProfileStringW(L"Instrument1", L"DataSource", L"okx", config.Path().c_str());
+    const auto migratedSources = config.Load();
+    Check(migratedSources.instruments.size() == 2 &&
+          migratedSources.instruments[0].dataSource == cryptoprice::DataSource::Binance &&
+          migratedSources.instruments[1].dataSource == cryptoprice::DataSource::Okx,
+          "legacy source migrates only for instruments lacking their own key");
+    Check(config.Save(migratedSources), "save migrated per-instrument sources");
+    wchar_t globalSource[32]{};
+    GetPrivateProfileStringW(L"General", L"DataSource", L"missing", globalSource, 32, config.Path().c_str());
+    Check(std::wstring(globalSource) == L"missing", "remove obsolete global source after save");
+    const auto reloadedSources = config.Load();
+    Check(reloadedSources.instruments[0].dataSource == cryptoprice::DataSource::Binance &&
+          reloadedSources.instruments[1].dataSource == cryptoprice::DataSource::Okx,
+          "per-instrument sources survive reload without legacy key");
     std::filesystem::remove_all(configDirectory);
 
     const auto dohAddresses = cryptoprice::ParseDohIpv4Addresses(
@@ -230,6 +303,40 @@ int main()
         true, tickers, error), "parse Binance coin futures");
     Check(tickers.size() == 1 && tickers.count("BTCUSD") == 1,
           "keep Binance coin perpetual and normalize symbol");
+
+    const std::string stocks = R"({"error":[],"result":{
+      "AAPLxUSD":{"c":["352.81","0.692700"],"o":"353.33"},
+      "FxUSD":{"c":["12.34","1"],"o":"12"},
+      "TSLAxUSD":{"c":["380.11","1"],"v":["1","2"]},
+      "AAPLSPVUSD":{"c":["354.16","1"]},
+      "AAPLxEUR":{"c":["300","1"]},
+      "AAPLxUSDT":{"c":["353","1"]}
+    }})";
+    Check(cryptoprice::ParseKrakenStockResponse(stocks, tickers, error), "parse Kraken stocks");
+    Check(tickers.size() == 3 && tickers.at("AAPL").lastPrice == "352.81" &&
+          tickers.at("F").lastPrice == "12.34" && tickers.at("TSLA").lastPrice == "380.11",
+          "only canonical xUSD pairs, not SPV aliases, EUR or USDT");
+    Check(tickers.at("AAPL").price24hPcnt.empty() && tickers.at("AAPL").markPrice.empty(),
+          "do not mislabel daily change as rolling 24h change or invent derivative prices");
+    for (const std::string invalid : {
+        R"({"error":["EQuery:Unknown asset pair"],"result":{}})",
+        R"({"result":{}})", R"({"error":[],"result":{}})",
+        R"({"error":[],"result":{"AAPLxUSD":{"c":[]}}})",
+        R"({"error":[],"result":{"AAPLxUSD":{"c":["1","1"]}})",
+        R"({"error":[],"result":{"AAPLxUSD":{"c":["1","1"]},}})"})
+        Check(!cryptoprice::ParseKrakenStockResponse(invalid, tickers, error) && tickers.empty(),
+              "reject failed or malformed stock response without partial tickers");
+
+    Check(cryptoprice::BuildCompactTooltip(L"行情", {L"AAPL/USD: 100.00", L"TSLA/USD: 200.00"}) ==
+          L"行情\nAAPL/USD: 100.00\nTSLA/USD: 200.00", "short tooltip retains complete rows");
+    const auto longTooltip = cryptoprice::BuildCompactTooltip(L"行情", std::vector<std::wstring>(16, std::wstring(100, L'X')));
+    Check(longTooltip.size() <= cryptoprice::kMaxTooltipLength &&
+          longTooltip.find(L"更多见插件设置") != std::wstring::npos, "long tooltip is bounded and marked");
+    Check(cryptoprice::BuildCompactTooltip(std::wstring(2000, L'X'), {}).size() <=
+          cryptoprice::kMaxTooltipLength, "long title is bounded");
+    // The failing user's other plugins and host consume 514 characters. Keep a
+    // conservative 600-character co-resident budget below the MFC 1024 limit.
+    Check(longTooltip.size() + 600 <= 1024, "leave host and co-resident plugin tooltip headroom");
 
     TestInstrumentValidation();
 

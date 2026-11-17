@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 
 project(CryptoPricePlugin VERSION 2.2.0 LANGUAGES CXX)
 
@@ -13,6 +13,7 @@ add_library(CryptoPrice SHARED
     src/Config.cpp
     src/Json.cpp
     src/OptionsWindow.cpp
+    src/Tooltip.cpp
     src/dllmain.cpp
 )
 
@@ -40,6 +41,7 @@ if(BUILD_TESTING)
         src/InstrumentValidation.cpp
         src/Config.cpp
         src/Json.cpp
+        src/Tooltip.cpp
     )
     target_include_directories(CryptoPriceTests PRIVATE src)
     target_compile_features(CryptoPriceTests PRIVATE cxx_std_17)
@@ -54,6 +56,19 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME CryptoPriceTests COMMAND CryptoPriceTests)
 
+    add_executable(CryptoPriceOptionsSourceTests
+        tests/OptionsSourceTests.cpp src/OptionsWindow.cpp src/Config.cpp
+        src/InstrumentValidation.cpp src/MarketClient.cpp src/Json.cpp)
+    target_include_directories(CryptoPriceOptionsSourceTests PRIVATE src)
+    target_compile_features(CryptoPriceOptionsSourceTests PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPriceOptionsSourceTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(CryptoPriceOptionsSourceTests PRIVATE winhttp comctl32 user32 gdi32)
+    if(MSVC)
+        target_compile_options(CryptoPriceOptionsSourceTests PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME CryptoPriceOptionsSourceTests COMMAND CryptoPriceOptionsSourceTests)
+    set_tests_properties(CryptoPriceOptionsSourceTests PROPERTIES TIMEOUT 15)
+
     add_executable(CryptoPriceSmoke tests/PluginSmoke.cpp)
     target_include_directories(CryptoPriceSmoke PRIVATE src)
     target_compile_features(CryptoPriceSmoke PRIVATE cxx_std_17)
@@ -65,4 +80,8 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures)
     add_test(NAME CryptoPriceNoChangeWidthSmoke COMMAND CryptoPriceSmoke $<TARGET_FILE:CryptoPrice>
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures-no-change --no-change)
+    add_test(NAME CryptoPriceStockSmoke COMMAND CryptoPriceSmoke $<TARGET_FILE:CryptoPrice>
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures-stocks --stocks)
+    add_test(NAME CryptoPriceMixedSourceSmoke COMMAND CryptoPriceSmoke $<TARGET_FILE:CryptoPrice>
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures-mixed-sources --mixed-sources)
 endif()

@@ -2,6 +2,7 @@
 
 #include "MarketClient.h"
 #include "OptionsWindow.h"
+#include "Tooltip.h"
 
 #include <Windows.h>
 
@@ -46,12 +47,21 @@ std::wstring PriceSample(int precision)
 
 bool IsSpot(const Instrument& instrument)
 {
-    return instrument.category == L"SPOT";
+    return instrument.category == L"SPOT" || instrument.category == L"US-STOCK";
+}
+
+std::wstring SummarySource(const Settings& settings)
+{
+    if (settings.instruments.empty()) return L"Crypto";
+    const DataSource source = InstrumentSource(settings.instruments.front());
+    for (const Instrument& instrument : settings.instruments)
+        if (InstrumentSource(instrument) != source) return L"多源";
+    return DataSourceName(source);
 }
 
 std::wstring DisplaySymbol(const Instrument& instrument)
 {
-    return FormatInstrumentSymbol(instrument);
+    return FormatInstrumentSymbol(instrument) + L" [" + InstrumentSourceName(instrument) + L"]";
 }
 
 std::wstring SelectPrice(const Ticker& ticker, PriceType type, bool spot, int precision)
@@ -263,17 +273,18 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
     {
         std::lock_guard<std::mutex> lock(settingsMutex_);
         settings_ = std::move(settings);
-        items_[0].name_ = std::wstring(DataSourceName(settings_.dataSource)) + L" 行情汇总";
-        items_[0].label_ = std::wstring(DataSourceName(settings_.dataSource)) + L": ";
+        items_[0].name_ = SummarySource(settings_) + L" 行情汇总";
+        items_[0].label_ = SummarySource(settings_) + L": ";
         for (std::size_t index = 0; index < settings_.instruments.size(); ++index)
         {
             PriceItem& item = items_[index + 1];
-            item.name_ = std::wstring(DataSourceName(settings_.dataSource)) + L" " +
-                         DisplaySymbol(settings_.instruments[index]);
+            item.name_ = std::wstring(InstrumentSourceName(settings_.instruments[index])) +
+                         L" " + DisplaySymbol(settings_.instruments[index]);
             item.label_ = DisplaySymbol(settings_.instruments[index]) + L": ";
             item.value_ = L"--";
             item.sample_ = PriceSample(settings_.instruments[index].precision);
-            if (settings_.showChange) item.sample_ += L" +00.00%";
+            if (settings_.showChange && settings_.instruments[index].category != L"US-STOCK")
+                item.sample_ += L" +00.00%";
             item.detail_ = L"等待行情";
         }
         // 已注册的空闲槽位也要清理，避免删除标的后继续显示原来的名称和价格。
@@ -339,18 +350,18 @@ void CryptoPricePlugin::StartRefresh(bool force)
 
 void CryptoPricePlugin::RefreshWorker(Settings settings, unsigned long long generation)
 {
-    std::map<std::wstring, std::vector<std::size_t>> groups;
+    std::map<std::pair<DataSource, std::wstring>, std::vector<std::size_t>> groups;
     for (std::size_t index = 0; index < settings.instruments.size(); ++index)
-        groups[settings.instruments[index].category].push_back(index);
+        groups[{InstrumentSource(settings.instruments[index]), settings.instruments[index].category}].push_back(index);
 
     std::vector<QuoteResult> results(settings.instruments.size());
     MarketClient client;
-    for (const auto& [category, indexes] : groups)
+    for (const auto& [group, indexes] : groups)
     {
         if (shuttingDown_) break;
         std::unordered_map<std::string, Ticker> tickers;
         std::wstring requestError;
-        const bool success = client.FetchCategory(settings.dataSource, category, settings.priceType,
+        const bool success = client.FetchCategory(group.first, group.second, settings.priceType,
                                                   tickers, requestError);
         for (const std::size_t index : indexes)
         {
@@ -395,7 +406,7 @@ void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
                                    const Settings& settings)
 {
     PriceItem& item = items_[index + 1];
-    item.name_ = std::wstring(DataSourceName(settings.dataSource)) + L" " +
+    item.name_ = std::wstring(InstrumentSourceName(result.instrument)) + L" " +
                  DisplaySymbol(result.instrument);
     item.label_ = DisplaySymbol(result.instrument) + L": ";
     if (!result.success)
@@ -406,8 +417,11 @@ void CryptoPricePlugin::UpdateItem(std::size_t index, const QuoteResult& result,
     }
     item.value_ = SelectPrice(result.ticker, settings.priceType,
                               IsSpot(result.instrument), result.instrument.precision);
-    if (settings.showChange) item.value_ += FormatChange(result.ticker.price24hPcnt);
+    if (settings.showChange && result.instrument.category != L"US-STOCK")
+        item.value_ += FormatChange(result.ticker.price24hPcnt);
     item.detail_ = L"最新 " + FormatPrice(result.ticker.lastPrice, result.instrument.precision);
+    if (result.instrument.category == L"US-STOCK")
+        item.detail_ += L" USD | Kraken xStocks 代币化美股 | 不提供 24 小时涨跌幅";
     if (!IsSpot(result.instrument))
         item.detail_ += L" | 标记 " + FormatPrice(result.ticker.markPrice, result.instrument.precision) +
                         L" | 指数 " + FormatPrice(result.ticker.indexPrice, result.instrument.precision);
@@ -418,8 +432,8 @@ void CryptoPricePlugin::RebuildAggregate()
     if (settings_.instruments.empty()) return;
 
     PriceItem& aggregate = items_[0];
-    aggregate.name_ = std::wstring(DataSourceName(settings_.dataSource)) + L" 行情汇总";
-    aggregate.label_ = std::wstring(DataSourceName(settings_.dataSource)) + L": ";
+    aggregate.name_ = SummarySource(settings_) + L" 行情汇总";
+    aggregate.label_ = SummarySource(settings_) + L": ";
     aggregate.value_.clear();
     aggregate.sample_.clear();
     aggregate.detail_ = L"共 " + std::to_wstring(settings_.instruments.size()) + L" 个标的";
@@ -433,24 +447,30 @@ void CryptoPricePlugin::RebuildAggregate()
         aggregate.value_ += DisplaySymbol(settings_.instruments[index]) + L" " + items_[index + 1].value_;
         aggregate.sample_ += DisplaySymbol(settings_.instruments[index]) + L" " +
                              PriceSample(settings_.instruments[index].precision);
-        if (settings_.showChange) aggregate.sample_ += L" +00.00%";
+        if (settings_.showChange && settings_.instruments[index].category != L"US-STOCK")
+            aggregate.sample_ += L" +00.00%";
     }
 }
 
 void CryptoPricePlugin::RebuildTooltip(std::size_t itemCount)
 {
-    tooltip_ = std::wstring(DataSourceName(settings_.dataSource)) + L" 行情";
-    if (itemCount == 0)
-    {
-        tooltip_ += L"\n" + items_[0].detail_;
-        return;
-    }
+    std::wstring title = SummarySource(settings_) + L" 行情";
+    const bool stocks = std::any_of(settings_.instruments.begin(), settings_.instruments.end(),
+        [](const Instrument& instrument) { return instrument.category == L"US-STOCK"; });
+    if (stocks) title += L"（美股 USD / 代币化 / 仅最新价）";
+    std::vector<std::wstring> lines;
+    if (itemCount == 0) lines.push_back(items_[0].detail_);
     for (std::size_t index = 0; index < itemCount && index < kMaxInstruments; ++index)
     {
         const PriceItem& item = items_[index + 1];
-        tooltip_ += L"\n" + item.label_ + item.value_;
-        if (!item.detail_.empty()) tooltip_ += L"（" + item.detail_ + L"）";
+        // The value already contains the selected price; don't repeat last/mark/index
+        // or the same stock disclaimer on every line. Bound errors independently.
+        std::wstring line = item.label_ + item.value_;
+        if (item.value_ == L"--" && !item.detail_.empty())
+            line += L"（" + item.detail_.substr(0, 40) + (item.detail_.size() > 40 ? L"…" : L"") + L"）";
+        lines.push_back(std::move(line));
     }
+    tooltip_ = BuildCompactTooltip(title, lines);
 }
 } // namespace cryptoprice
 

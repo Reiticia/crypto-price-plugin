@@ -12,12 +12,13 @@
 
 ## 功能
 
-- 数据源支持 Bitget、OKX、Binance，可在选项窗口全局切换
+- 数据源按标的独立设置：可同时监控 Bitget、OKX、Binance 的报价，同一交易对可添加多个交易所
 - 同时配置最多 16 个现货或合约标的
 - 支持现货、USDT 本位、USDC 本位和币本位合约
+- 支持“美股（USD）”：固定使用 Kraken xStocks 美元交易对，输入 `AAPL`、`TSLA`、`NVDA` 等代码；与加密标的可混合监控
 - “显示价格”可选择最新价格、标记价格或指数价格；该选项全局作用于合约，现货始终显示最新成交价
 - 合约显示为 `BTCUSDT`，现货显示为 `BTC/USDT`
-- 24 小时涨跌幅保留两位小数
+- 加密行情的 24 小时涨跌幅保留两位小数；美股仅显示最新价，不提供 24 小时涨跌幅
 - 价格小数位可配置：留空由程序按行情自动推断，也可固定为 0–10 位（每个标的独立设置）
 - 默认任务栏项目汇总所有标的，同时提供各标的独立显示项
 - 后台刷新行情，同一数据源和市场类别只请求一次
@@ -34,9 +35,14 @@
 
 例如币本位 `BTCUSD` 会自动映射为 OKX 的 `BTC-USD-SWAP` 或 Binance 的 `BTCUSD_PERP`。
 
+“美股（USD）”的数据源固定为 Kraken xStocks，不受全局“显示价格”影响；显示为
+`AAPL/USD`，不是 USDT 报价，也不按 USDT = USD 换算。行情为交易所的代币化美股／ETF
+（xStocks），不是证券交易所原生报价，价格可能存在偏差；仅支持 Kraken 已上线的 USD 标的。
+Kraken ticker 的开盘价是当日开盘价，不能用于推算滚动 24 小时涨跌幅，因此美股不显示百分比。
+
 ## 构建
 
-需要 Visual Studio 2022（含“使用 C++ 的桌面开发”工作负载）和 CMake 3.20 或更高版本。
+需要 Visual Studio 2022（含“使用 C++ 的桌面开发”工作负载）和 CMake 3.21 或更高版本。
 
 默认构建链路为 `CMake → Visual Studio 2022 / MSBuild → MSVC CL.exe`。CMake 负责生成
 Visual Studio 工程，实际 C++ 编译由 MSVC 完成；当前不使用 Clang。
@@ -44,20 +50,32 @@ Visual Studio 工程，实际 C++ 编译由 MSVC 完成；当前不使用 Clang�
 x64：
 
 ```powershell
-cmake -S . -B build-x64 -A x64
-cmake --build build-x64 --config Release
-ctest --test-dir build-x64 -C Release --output-on-failure
+cmake --preset x64
+cmake --build --preset x64-release
+ctest --preset x64-release
 ```
 
 Win32：
 
 ```powershell
-cmake -S . -B build-win32 -A Win32
-cmake --build build-win32 --config Release
-ctest --test-dir build-win32 -C Release --output-on-failure
+cmake --preset win32
+cmake --build --preset win32-release
+ctest --preset win32-release
 ```
 
-产物为 `build-x64/Release/CryptoPrice.dll` 或 `build-win32/Release/CryptoPrice.dll`。
+产物为 `build/x64/Release/CryptoPrice.dll` 或 `build/win32/Release/CryptoPrice.dll`。
+
+两个项目使用相同的 `CMakePresets.json` 约定，本地和 CI 的构建目录统一为
+`build/<架构>/`，Release 的 DLL、测试程序位于其 `Release/` 子目录；Debug 则位于
+`Debug/`。例如：
+
+```text
+build/
+  x64/Release/CryptoPrice.dll
+  win32/Release/CryptoPrice.dll
+```
+
+请从新目录获取产物；旧构建目录不再使用，确认无需保留后可自行删除。
 
 ### GitHub Actions
 
@@ -79,10 +97,15 @@ ctest --test-dir build-win32 -C Release --output-on-failure
 4. 选择 Bitget、OKX 或 Binance，再添加所需现货或合约标的。
 5. 在 TrafficMonitor 显示设置中启用汇总项或各标的独立项。
 
+数据源位于“标的独立设置”中，与交易对、市场类型和小数位数一起保存。选择列表中的标的，
+修改数据源后点击“更新选中项”，再点“确定”。显示标签标明交易所，混合来源的汇总显示“多源”。
+旧 INI 的 `[General] DataSource` 会迁移为每个标的的默认值，保存后写入各 `[InstrumentN] DataSource`。
+
 输入 `BTC/USDT`、`BTC-USDT` 或 `btcusdt` 都会转换成内部 symbol `BTCUSDT`。现货界面显示 `BTC/USDT`，合约界面显示 `BTCUSDT`。
 
 ## 官方接口
 
+- [Kraken xStocks Ticker](https://docs.kraken.com/api/docs/rest-api/get-ticker-information/)（`asset_class=tokenized_asset`）
 - [Bitget UTA Tickers](https://www.bitget.com/zh-CN/api-doc/uta/public/Tickers)
 - [OKX REST Market Data](https://www.okx.com/docs-v5/en/#rest-api-market-data-get-tickers)
 - [Binance Spot Market Data](https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints)

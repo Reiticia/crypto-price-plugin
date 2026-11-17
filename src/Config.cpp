@@ -68,8 +68,45 @@ bool IsValidSymbol(const std::wstring& value)
     });
 }
 
+std::wstring NormalizeStockSymbol(std::wstring value)
+{
+    // Preserve a literal lowercase x before normalizing: NFLX/USD is a stock code,
+    // while AAPLx/USD is Kraken's tokenized pair. Uppercasing first loses that distinction.
+    value.erase(std::remove_if(value.begin(), value.end(), [](wchar_t character) {
+        return std::iswspace(character) || character == L'/' || character == L'-' || character == L'_';
+    }), value.end());
+    const bool tokenSuffix = value.size() > 4 && value[value.size() - 4] == L'x';
+    value = NormalizeSymbol(std::move(value));
+    if (value.size() > 3 && value.compare(value.size() - 3, 3, L"USD") == 0)
+    {
+        value.resize(value.size() - 3);
+        if (tokenSuffix) value.pop_back();
+    }
+    return value;
+}
+
+bool IsValidInstrumentSymbol(const Instrument& instrument)
+{
+    if (instrument.category != L"US-STOCK") return IsValidSymbol(instrument.symbol);
+    return !instrument.symbol.empty() && instrument.symbol.size() <= 16 &&
+        std::all_of(instrument.symbol.begin(), instrument.symbol.end(), [](wchar_t character) {
+            return character >= L'A' && character <= L'Z';
+        });
+}
+
+DataSource InstrumentSource(const Instrument& instrument)
+{
+    return instrument.category == L"US-STOCK" ? DataSource::Kraken : instrument.dataSource;
+}
+
+const wchar_t* InstrumentSourceName(const Instrument& instrument)
+{
+    return DataSourceName(InstrumentSource(instrument));
+}
+
 std::wstring FormatInstrumentSymbol(const Instrument& instrument)
 {
+    if (instrument.category == L"US-STOCK") return instrument.symbol + L"/USD";
     if (instrument.category != L"SPOT") return instrument.symbol;
 
     static constexpr std::array<std::wstring_view, 12> quoteCurrencies{
@@ -102,6 +139,7 @@ const wchar_t* DataSourceKey(DataSource source)
     {
     case DataSource::Okx: return L"okx";
     case DataSource::Binance: return L"binance";
+    case DataSource::Kraken: return L"kraken";
     default: return L"bitget";
     }
 }
@@ -112,6 +150,7 @@ const wchar_t* DataSourceName(DataSource source)
     {
     case DataSource::Okx: return L"OKX";
     case DataSource::Binance: return L"Binance";
+    case DataSource::Kraken: return L"Kraken xStocks";
     default: return L"Bitget";
     }
 }
@@ -120,6 +159,7 @@ DataSource DataSourceFromKey(const std::wstring& value)
 {
     if (value == L"okx") return DataSource::Okx;
     if (value == L"binance") return DataSource::Binance;
+    if (value == L"kraken") return DataSource::Kraken;
     return DataSource::Bitget;
 }
 
@@ -152,7 +192,8 @@ Settings ConfigStore::Load() const
         2, 300);
     settings.showChange = GetPrivateProfileIntW(L"General", L"ShowChange", 1, loadPath->c_str()) != 0;
     settings.priceType = PriceTypeFromKey(ReadString(*loadPath, L"General", L"PriceType", L"last"));
-    settings.dataSource = DataSourceFromKey(ReadString(*loadPath, L"General", L"DataSource", L"bitget"));
+    // Migrate the old global source only when a per-instrument key is absent.
+    const std::wstring legacySource = ReadString(*loadPath, L"General", L"DataSource", L"bitget");
 
     const int count = std::clamp(
         static_cast<int>(GetPrivateProfileIntW(L"General", L"Count", 1, loadPath->c_str())),
@@ -163,11 +204,17 @@ Settings ConfigStore::Load() const
         const std::wstring section = L"Instrument" + std::to_wstring(index);
         Instrument instrument;
         instrument.category = ReadString(*loadPath, section.c_str(), L"Category", L"USDT-FUTURES");
-        instrument.symbol = NormalizeSymbol(ReadString(*loadPath, section.c_str(), L"Symbol", L""));
+        const std::wstring symbol = ReadString(*loadPath, section.c_str(), L"Symbol", L"");
+        instrument.symbol = instrument.category == L"US-STOCK" ? NormalizeStockSymbol(symbol) :
+                            NormalizeSymbol(symbol);
         instrument.precision = ReadPrecision(*loadPath, section.c_str());
+        instrument.dataSource = DataSourceFromKey(ReadString(*loadPath, section.c_str(),
+            L"DataSource", legacySource.c_str()));
+        if (instrument.category == L"US-STOCK") instrument.dataSource = DataSource::Kraken;
+        else if (instrument.dataSource == DataSource::Kraken) instrument.dataSource = DataSource::Bitget;
         if ((instrument.category == L"SPOT" || instrument.category == L"USDT-FUTURES" ||
-             instrument.category == L"USDC-FUTURES" || instrument.category == L"COIN-FUTURES") &&
-            IsValidSymbol(instrument.symbol))
+             instrument.category == L"USDC-FUTURES" || instrument.category == L"COIN-FUTURES" ||
+             instrument.category == L"US-STOCK") && IsValidInstrumentSymbol(instrument))
             settings.instruments.push_back(std::move(instrument));
     }
     return settings;
@@ -181,7 +228,7 @@ bool ConfigStore::Save(const Settings& settings) const
     };
 
     bool ok = true;
-    ok &= write(L"General", L"DataSource", DataSourceKey(settings.dataSource));
+    // Remove the obsolete global key; each saved instrument carries its own source.
     ok &= write(L"General", L"RefreshSeconds", std::to_wstring(settings.refreshSeconds));
     ok &= write(L"General", L"ShowChange", settings.showChange ? L"1" : L"0");
     ok &= write(L"General", L"PriceType", PriceTypeKey(settings.priceType));
@@ -190,11 +237,13 @@ bool ConfigStore::Save(const Settings& settings) const
     for (std::size_t index = 0; index < count; ++index)
     {
         const std::wstring section = L"Instrument" + std::to_wstring(index);
+        ok &= write(section.c_str(), L"DataSource", DataSourceKey(InstrumentSource(settings.instruments[index])));
         ok &= write(section.c_str(), L"Category", settings.instruments[index].category);
         ok &= write(section.c_str(), L"Symbol", settings.instruments[index].symbol);
         ok &= write(section.c_str(), L"Precision",
                     std::to_wstring(std::clamp(settings.instruments[index].precision, -1, 10)));
     }
+    if (ok) ok = WritePrivateProfileStringW(L"General", L"DataSource", nullptr, path_.c_str()) != FALSE;
     return ok;
 }
 } // namespace cryptoprice

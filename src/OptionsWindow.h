@@ -23,6 +23,7 @@ private:
     void CreateControls();
     void RefreshList(int selection = -1);
     void LoadSelection();
+    void UpdateSourceChoices();
     void AddNew();
     void UpdateSelected();
     void RemoveSelected();
