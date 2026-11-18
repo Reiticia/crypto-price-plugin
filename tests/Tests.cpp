@@ -187,11 +187,30 @@ int main()
     cryptoprice::ConfigStore config;
     config.SetDirectory(configDirectory.wstring());
     cryptoprice::Settings settings;
-    settings.refreshSeconds = 30;
     settings.instruments[0].precision = 6;
     Check(config.Save(settings), "save config without credentials");
     const cryptoprice::Settings loaded = config.Load();
-    Check(loaded.refreshSeconds == 30, "load refresh seconds");
+    Check(loaded.updateMode == cryptoprice::UpdateMode::WebSocket && loaded.refreshSeconds == 5,
+          "default websocket mode and saved HTTP interval");
+    auto polling = loaded;
+    polling.updateMode = cryptoprice::UpdateMode::HttpPolling;
+    polling.refreshSeconds = 30;
+    Check(config.Save(polling), "save HTTP mode");
+    Check(config.Load().updateMode == cryptoprice::UpdateMode::HttpPolling && config.Load().refreshSeconds == 30,
+          "round-trip HTTP mode and interval");
+    polling.refreshSeconds = 0;
+    Check(config.Save(polling) && config.Load().refreshSeconds == 2, "clamp minimum polling interval on save");
+    polling.refreshSeconds = 999;
+    Check(config.Save(polling) && config.Load().refreshSeconds == 300, "clamp maximum polling interval on save");
+    WritePrivateProfileStringW(L"General", L"UpdateMode", nullptr, config.Path().c_str());
+    Check(config.Load().updateMode == cryptoprice::UpdateMode::WebSocket && config.Load().refreshSeconds == 300,
+          "legacy config defaults to websocket and preserves polling interval");
+    WritePrivateProfileStringW(L"General", L"UpdateMode", L"unknown", config.Path().c_str());
+    WritePrivateProfileStringW(L"General", L"RefreshSeconds", L"1", config.Path().c_str());
+    Check(config.Load().updateMode == cryptoprice::UpdateMode::WebSocket && config.Load().refreshSeconds == 2,
+          "invalid mode defaults to websocket; clamp polling interval on load");
+    WritePrivateProfileStringW(L"General", L"RefreshSeconds", L"999", config.Path().c_str());
+    Check(config.Load().refreshSeconds == 300, "clamp maximum polling interval on load");
     Check(loaded.instruments.size() == 1 &&
               loaded.instruments[0].symbol == L"BTCUSDT" &&
               loaded.instruments[0].precision == 6,

@@ -21,8 +21,9 @@
 - 加密行情的 24 小时涨跌幅保留两位小数；美股仅显示最新价，不提供 24 小时涨跌幅
 - 价格小数位可配置：留空由程序按行情自动推断，也可固定为 0–10 位（每个标的独立设置）
 - 默认任务栏项目汇总所有标的，同时提供各标的独立显示项
-- 行情改为 WebSocket 推送，按交易所／市场复用连接，心跳与断线自动重连，不回退 REST 价格轮询
-- 显示间隔只控制界面更新；REST 仅用于启动元数据和设置校验
+- 行情模式可选 WebSocket 推送或 HTTP 轮询，均按交易所／市场复用请求
+- WebSocket 收到推送即更新缓存，无额外显示间隔；支持心跳、自动重连，不自动切换 HTTP
+- HTTP 轮询可设置 2–300 秒刷新时间（默认 5 秒），后台请求，不阻塞界面
 - 配置保存到 `CryptoPrice.ini`
 
 ## 统一市场映射
@@ -38,7 +39,7 @@
 例如币本位 `BTCUSD` 会自动映射为 OKX 的 `BTC-USD-SWAP` 或 Binance 的 `BTCUSD_PERP`。
 Kraken 现货输入 `BTC/USD`、`BTC/USDT` 等实际交易对，`XBT` 自动映射为 `BTC`；
 USD 本位合约输入 `BTCUSD`、`ETHUSD`（对应 `PF_XBTUSD` 等），不冒充 USDT/USDC 报价，
-不包含交割及 PI 反向合约。Kraken 现货使用 WebSocket v2 的真实 `change_pct` 显示 24 小时涨跌幅；合约
+不包含交割及 PI 反向合约。Kraken 现货在 WebSocket 模式使用真实 `change_pct` 显示 24 小时涨跌幅，HTTP 模式不提供该百分比；合约
 支持最新价、标记价、指数价及 24 小时涨跌幅。Bybit USDC 合约输入 `BTCUSDC`，内部匹配
 `BTCPERP` 等真实交易所代码；交割合约会被过滤。
 
@@ -98,9 +99,16 @@ build/
 
 ## 安装和使用
 
-**升级须完全退出 TrafficMonitor 后替换 DLL。** 常驻 WebSocket 启动后会保持 DLL 映射，
-不支持进程内热卸载／热替换。断线显示 `--` 并自动重连，不静默使用 REST 轮询兜底。
-`RefreshSeconds`（设置中的“显示间隔”，2–300 秒）只限制界面更新，网络一直接收推送。
+**升级须完全退出 TrafficMonitor 后替换 DLL。** 任一模式启动后台行情后会保持 DLL 映射，
+不支持进程内热卸载／热替换。WebSocket 断线显示 `--` 并自动重连，不静默使用 REST 轮询兜底。
+在插件“全局设置”中选择“行情模式”：
+
+- **WebSocket 推送**（默认）：收到推送即更新缓存，不使用刷新时间。
+- **HTTP 轮询**：设置“刷新时间”（2–300 秒），启动时立即请求，之后定期刷新；慢请求不重叠、不积压补发。
+
+模式切换会停用旧会话，丢弃迟到结果；两种模式不会自动互相回退。每次 TrafficMonitor 刷新直接应用最新缓存，实际重绘频率由宿主控制。
+配置保存为 `[General] UpdateMode=websocket` 或 `http`；`RefreshSeconds=5` 仅作用于 HTTP，旧配置未指定模式时默认 WebSocket。
+两种模式启动后台行情后 DLL 都会保持映射，替换前均须退出宿主。
 
 1. 完全退出 TrafficMonitor。
 2. 将 `CryptoPrice.dll` 复制到 TrafficMonitor 的 `plugins` 文件夹。

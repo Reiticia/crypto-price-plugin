@@ -24,6 +24,7 @@ constexpr int kAdd = 1004;
 constexpr int kRemove = 1005;
 constexpr int kPriceType = 1006;
 constexpr int kRefresh = 1007;
+constexpr int kUpdateMode = 1013;
 constexpr int kShowChange = 1008;
 constexpr int kStatus = 1009;
 constexpr int kUpdate = 1010;
@@ -124,7 +125,7 @@ bool OptionsWindow::Create(HWND parent)
     if (!RegisterClassExW(&windowClass) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS)
         return false;
 
-    RECT rectangle{0, 0, 660, 480};
+    RECT rectangle{0, 0, 660, 520};
     AdjustWindowRectEx(&rectangle, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
     int x = CW_USEDEFAULT;
     int y = CW_USEDEFAULT;
@@ -184,6 +185,9 @@ LRESULT OptionsWindow::HandleMessage(UINT message, WPARAM wParam, LPARAM lParam)
                     L"美股固定 Kraken xStocks（USD）；输入 AAPL、TSLA 等代码。" :
                     L"数据源仅作用于当前标的；修改后点击“更新选中项”。");
             }
+            return 0;
+        case kUpdateMode:
+            if (HIWORD(wParam) == CBN_SELCHANGE) UpdateModeControls();
             return 0;
         case kDataSource:
             if (HIWORD(wParam) == CBN_SELCHANGE &&
@@ -254,7 +258,7 @@ void OptionsWindow::CreateControls()
                530, 253, 100, 27, kRemove);
 
     AddControl(window_, L"BUTTON", L"全局设置", BS_GROUPBOX,
-               18, 302, 624, 100, -1);
+               18, 302, 624, 140, -1);
     AddControl(window_, L"STATIC", L"显示价格", 0, 30, 328, 65, 20, -1);
     priceType_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
                             100, 324, 230, 150, kPriceType);
@@ -263,20 +267,27 @@ void OptionsWindow::CreateControls()
     SendMessageW(priceType_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"指数价格（仅合约）"));
     SendMessageW(priceType_, CB_SETCURSEL, static_cast<WPARAM>(draft_.priceType), 0);
 
-    AddControl(window_, L"STATIC", L"显示间隔", 0, 30, 366, 65, 20, -1);
+    AddControl(window_, L"STATIC", L"行情模式", 0, 30, 366, 65, 20, -1);
+    updateMode_ = AddControl(window_, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST,
+                             100, 362, 160, 100, kUpdateMode);
+    SendMessageW(updateMode_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"WebSocket 推送"));
+    SendMessageW(updateMode_, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(L"HTTP 轮询"));
+    SendMessageW(updateMode_, CB_SETCURSEL, draft_.updateMode == UpdateMode::HttpPolling ? 1 : 0, 0);
+    AddControl(window_, L"STATIC", L"刷新时间", 0, 30, 406, 65, 20, -1);
     refresh_ = AddControl(window_, L"EDIT", std::to_wstring(draft_.refreshSeconds).c_str(),
-                          WS_BORDER | WS_TABSTOP | ES_NUMBER, 100, 362, 44, 25, kRefresh);
-    AddControl(window_, L"STATIC", L"秒（2–300）", 0, 150, 366, 105, 20, -1);
+                          WS_BORDER | WS_TABSTOP | ES_NUMBER, 100, 402, 44, 25, kRefresh);
+    AddControl(window_, L"STATIC", L"秒（2–300，仅 HTTP 轮询）", 0, 150, 406, 250, 20, -1);
+    UpdateModeControls();
     showChange_ = AddControl(window_, L"BUTTON", L"显示 24 小时涨跌幅",
                              WS_TABSTOP | BS_AUTOCHECKBOX, 270, 362, 360, 24, kShowChange);
     SendMessageW(showChange_, BM_SETCHECK, draft_.showChange ? BST_CHECKED : BST_UNCHECKED, 0);
 
     status_ = AddControl(window_, L"STATIC", L"输入如 BTCUSDT；BTC/USDT、BTC-USDT 会自动规范化。",
-                         0, 18, 412, 624, 22, kStatus);
+                         0, 18, 452, 624, 22, kStatus);
     AddControl(window_, L"BUTTON", L"确定", WS_TABSTOP | BS_DEFPUSHBUTTON,
-               454, 442, 88, 29, IDOK);
+               454, 482, 88, 29, IDOK);
     AddControl(window_, L"BUTTON", L"取消", WS_TABSTOP | BS_PUSHBUTTON,
-               554, 442, 88, 29, IDCANCEL);
+               554, 482, 88, 29, IDCANCEL);
     RefreshList(draft_.instruments.empty() ? -1 : 0);
 }
 
@@ -445,20 +456,30 @@ void OptionsWindow::RemoveSelected()
     SetStatus(L"已从列表移除；点击“确定”后生效。 ");
 }
 
+void OptionsWindow::UpdateModeControls()
+{
+    EnableWindow(refresh_, SendMessageW(updateMode_, CB_GETCURSEL, 0, 0) == 1);
+}
+
 void OptionsWindow::Accept()
 {
-    std::array<wchar_t, 16> refresh{};
-    GetWindowTextW(refresh_, refresh.data(), static_cast<int>(refresh.size()));
-    wchar_t* end = nullptr;
-    const long seconds = std::wcstol(refresh.data(), &end, 10);
-    if (end == refresh.data() || *end != L'\0' || seconds < 2 || seconds > 300)
+    draft_.updateMode = SendMessageW(updateMode_, CB_GETCURSEL, 0, 0) == 1
+        ? UpdateMode::HttpPolling : UpdateMode::WebSocket;
+    if (draft_.updateMode == UpdateMode::HttpPolling)
     {
-        SetStatus(L"显示间隔必须是 2 到 300 秒之间的整数（仅控制界面，行情由 WebSocket 推送）。");
-        SetFocus(refresh_);
-        MessageBeep(MB_ICONWARNING);
-        return;
+        std::array<wchar_t, 16> text{};
+        GetWindowTextW(refresh_, text.data(), static_cast<int>(text.size()));
+        wchar_t* end{};
+        const long seconds = std::wcstol(text.data(), &end, 10);
+        if (end == text.data() || *end != L'\0' || seconds < 2 || seconds > 300)
+        {
+            SetStatus(L"HTTP 轮询刷新时间必须是 2 到 300 秒之间的整数。");
+            SetFocus(refresh_);
+            MessageBeep(MB_ICONWARNING);
+            return;
+        }
+        draft_.refreshSeconds = static_cast<int>(seconds);
     }
-    draft_.refreshSeconds = static_cast<int>(seconds);
     BeginValidation(nullptr, SelectedIndex(), true);
 }
 
@@ -541,9 +562,10 @@ void OptionsWindow::FinishValidation()
 
 void OptionsWindow::SetValidationBusy(bool busy)
 {
-    for (int id : {kList, kSymbol, kCategory, kAdd, kRemove, kPriceType, kRefresh,
-                   kShowChange, kUpdate, kDataSource, kPrecision, IDOK})
+    for (int id : {kList, kSymbol, kCategory, kAdd, kRemove, kPriceType,
+                   kShowChange, kUpdate, kDataSource, kPrecision, kUpdateMode, kRefresh, IDOK})
         EnableWindow(GetDlgItem(window_, id), !busy);
+    if (!busy) UpdateModeControls();
     if (!busy && SendMessageW(category_, CB_GETCURSEL, 0, 0) == 4)
         EnableWindow(dataSource_, FALSE);
 }

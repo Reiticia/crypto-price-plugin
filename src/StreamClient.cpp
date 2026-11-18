@@ -105,6 +105,47 @@ struct StreamClient::Session : std::enable_shared_from_this<Session>
             backoff = (std::min)(backoff * 2, 30);
         }
     }
+    void Poll(DataSource source, const std::wstring& category, const std::vector<Instrument>& instruments,
+              const std::vector<std::size_t>& indexes, PriceType priceType, int seconds, const Fetcher& fetch)
+    {
+        // One sequential request per exchange/market group: never overlap slow
+        // polls or accumulate missed ticks. Cancellation interrupts the wait;
+        // an in-flight HTTP call finishes privately and cannot publish after Stop.
+        while (!Stopped())
+        {
+            const auto started = std::chrono::steady_clock::now();
+            std::vector<StreamQuote> updates;
+            try
+            {
+                std::unordered_map<std::string, Ticker> tickers;
+                std::wstring error;
+                const bool success = fetch(source, category, priceType, tickers, error);
+                for (std::size_t i = 0; i < indexes.size(); ++i)
+                {
+                    const auto found = tickers.find(WideToAscii(instruments[i].symbol));
+                    if (!success) updates.push_back({indexes[i], false, {}, error.empty() ? L"HTTP 行情获取失败" : error});
+                    else if (found == tickers.end())
+                        updates.push_back({indexes[i], false, {}, L"未找到该标的，请检查市场类型和交易对"});
+                    else updates.push_back({indexes[i], true, found->second, {}});
+                }
+            }
+            catch (const std::exception& error)
+            {
+                for (auto index : indexes) updates.push_back({index, false, {}, Utf8ToWide(error.what())});
+            }
+            catch (...)
+            {
+                for (auto index : indexes) updates.push_back({index, false, {}, L"HTTP 行情请求异常"});
+            }
+            Publish(updates);
+            const auto elapsed = std::chrono::steady_clock::now() - started;
+            // If a request outlasts the interval, wait a full interval before
+            // retrying rather than issuing catch-up requests in a tight loop.
+            const auto interval = std::chrono::seconds(seconds);
+            const auto delay = elapsed < interval ? interval - elapsed : interval;
+            if (Wait(std::chrono::duration_cast<std::chrono::milliseconds>(delay))) break;
+        }
+    }
     void Connect(const StreamPlan& plan, const std::vector<std::size_t>& indexes, int& backoff)
     {
         Status(indexes, L"WebSocket 连接中，等待订阅快照");
@@ -218,6 +259,13 @@ struct StreamClient::Session : std::enable_shared_from_this<Session>
     const std::wstring& instrumentsFor(std::size_t index) const { return configured.at(index).symbol; }
 };
 
+StreamClient::StreamClient(Fetcher fetcher) : fetcher_(std::move(fetcher))
+{
+    if (!fetcher_) fetcher_ = [](DataSource source, const std::wstring& category, PriceType type,
+                               std::unordered_map<std::string, Ticker>& tickers, std::wstring& error) {
+        return MarketClient{}.FetchCategory(source, category, type, tickers, error);
+    };
+}
 StreamClient::~StreamClient() { Stop(); }
 void StreamClient::Stop()
 {
@@ -227,13 +275,13 @@ void StreamClient::Start(const Settings& settings, unsigned long long generation
 {
     Stop();
     if (closing_->load() || settings.instruments.empty()) return;
-    // TrafficMonitor has no pre-unload callback. Permanent streams cannot safely
+    // TrafficMonitor has no pre-unload callback. Background requests cannot safely
     // execute after FreeLibrary. Keep the DLL mapped until process exit; no
     // network joins or static-singleton destruction occur under the loader lock.
     HMODULE pinned{};
     if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
                            reinterpret_cast<LPCWSTR>(&g_moduleInstance), &pinned))
-        throw std::runtime_error("Cannot pin WebSocket plugin module");
+        throw std::runtime_error("Cannot pin market data plugin module");
     auto session = std::make_shared<Session>();
     session->closing = closing_; session->generation = generation;
     session->callback = std::move(callback); session->configured = settings.instruments;
@@ -247,8 +295,12 @@ void StreamClient::Start(const Settings& settings, unsigned long long generation
     {
         std::vector<Instrument> instruments;
         for (auto index : indexes) instruments.push_back(settings.instruments[index]);
-        std::thread([session, key, instruments = std::move(instruments), indexes] {
-            session->Run(key.first, key.second, instruments, indexes);
+        std::thread([session, key, instruments = std::move(instruments), indexes,
+                     mode = settings.updateMode, type = settings.priceType,
+                     seconds = std::clamp(settings.refreshSeconds, 2, 300), fetch = fetcher_] {
+            if (mode == UpdateMode::HttpPolling)
+                session->Poll(key.first, key.second, instruments, indexes, type, seconds, fetch);
+            else session->Run(key.first, key.second, instruments, indexes);
         }).detach();
     }
     }

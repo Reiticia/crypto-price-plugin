@@ -7,7 +7,6 @@
 
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <mutex>
 #include <string>
@@ -71,7 +70,6 @@ private:
         bool success{};
         Ticker ticker;
         std::wstring error;
-        bool urgentError{};
     };
     struct PendingResult
     {
@@ -107,7 +105,6 @@ private:
     bool streamStarted_{};
     std::atomic<bool> shuttingDown_{false};
     std::atomic<unsigned long long> generation_{1};
-    std::chrono::steady_clock::time_point nextRefresh_{};
     std::wstring tooltip_{L"Crypto 行情：等待数据"};
     std::atomic<bool> drawingTaskbar_{false};
     std::atomic<unsigned long> labelTextColor_{};

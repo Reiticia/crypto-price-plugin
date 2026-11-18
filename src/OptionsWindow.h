@@ -28,6 +28,7 @@ private:
     void UpdateSelected();
     void RemoveSelected();
     void Accept();
+    void UpdateModeControls();
     void BeginValidation(const Instrument* instrument, int selection, bool accept);
     void FinishValidation();
     void SetValidationBusy(bool busy);
@@ -44,6 +45,7 @@ private:
     HWND category_{};
     HWND priceType_{};
     HWND dataSource_{};
+    HWND updateMode_{};
     HWND refresh_{};
     HWND precision_{};
     HWND showChange_{};

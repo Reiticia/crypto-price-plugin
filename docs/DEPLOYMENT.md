@@ -104,6 +104,7 @@ CryptoPrice.ini
 
 ```ini
 [General]
+UpdateMode=websocket
 RefreshSeconds=5
 ShowChange=1
 PriceType=mark
@@ -130,7 +131,7 @@ Kraken 加密市场仅支持 `SPOT` 和 `USD-FUTURES`，示例 `BTCUSD`；不支
 Bybit 支持 `SPOT`、`USDT-FUTURES`、`USDC-FUTURES`、`COIN-FUTURES`；USDC 永续
 使用规范化代码 `BTCUSDC`。两家均不要求账户或密钥，接口地区限制／HTTP 403 会原样报错，
 不会自动切换其他交易所。Kraken 现货运行时通过 WebSocket v2 `change_pct` 获得 24 小时涨跌幅；
-REST 诊断仍不使用当日开盘价生成 24 小时涨幅。
+HTTP 轮询及 REST 诊断不使用当日开盘价生成 24 小时涨幅，因此 Kraken 现货在 HTTP 模式不显示百分比。
 
 ## 7. 部署后验证
 
@@ -143,8 +144,11 @@ REST 诊断仍不使用当日开盘价生成 24 小时涨幅。
 - 重启 TrafficMonitor 后配置仍有效；
 - 任务栏没有因网络请求出现卡顿。
 
-运行时不再 REST 轮询价格，`RefreshSeconds` 仅是显示间隔。15 秒心跳、断线自动退避重连，
-连接失效时清空价格并在提示中显示原因。**常驻推送启动后 DLL 会保持映射，升级、回滚
+“行情模式”可选 WebSocket 推送（默认）或 HTTP 轮询；HTTP 刷新时间为 2–300 秒，
+WebSocket 不使用刷新时间。配置键为 `UpdateMode=websocket/http`、`RefreshSeconds=5`。
+每次宿主刷新直接显示最新缓存，模式切换后旧请求结果不会覆盖新配置；不自动互相回退。
+WebSocket 每 15 秒心跳、断线自动退避重连，
+连接失效时清空价格并在提示中显示原因。**任一模式启动后台行情后 DLL 都会保持映射，升级、回滚
 及替换文件必须完全退出 TrafficMonitor；不能依赖进程内卸载。** 其他插件可继续正常工作。
 
 ## 8. 回滚

@@ -84,7 +84,7 @@ ctest --preset win32-release
 - 汇总项包含 `BTCUSDT` 和 `ETH/USDT`；
 - 已配置的两个独立显示项存在；
 - 已配置项之后不注册空槽位；
-- 未启动网络的 ABI 检查不发请求，插件可释放；启动 WebSocket 后 DLL 保持映射，只支持退出宿主后替换。
+- 未启动网络的 ABI 检查不发请求，插件可释放；启动任一后台行情模式后 DLL 保持映射，只支持退出宿主后替换。
 
 隐藏涨跌幅后的宽度回归：
 
@@ -155,7 +155,7 @@ Binance：
 .\build\x64\Release\CryptoPriceExchangeLiveSmoke.exe bybit COIN-FUTURES BTCUSD last
 ```
 
-上面的 ExchangeLiveSmoke 是显式 REST 诊断，不是插件运行路径；Kraken REST 现货涨跌幅为空。
+上面的 ExchangeLiveSmoke 是显式 REST 诊断，也覆盖 HTTP 轮询使用的 FetchCategory；Kraken HTTP 现货涨跌幅为空。
 运行时 WebSocket v2 则使用真实的 change_pct。分别检查最新价、标记价、指数价与结算币。
 Bybit 若返回 HTTP 403，先检查地区／网络限制，不应绕过限制或回退成其他交易所的价格。
 
@@ -172,9 +172,11 @@ Bybit 若返回 HTTP 403，先检查地区／网络限制，不应绕过限制�
 ```
 
 最多等待 35 秒，必须收到至少一条有效价格，活跃市场通常两条以上。追加 `--hold` 会等待\n18 秒之后的新报价，覆盖应用心跳周期；追加 `--reconnect` 会主动停止后以新 generation\n重连，要求新 session 取到报价且旧 session 在 Stop 之后不再回调。
-另用代理／防火墙模拟断网、恢复后重连，检查旧价被清空且自动重订阅。显示间隔设为
-300 秒时，断线提示仍应及时出现；修改标的后旧 session 不得覆盖新配置。
-REST 只应出现在必要元数据和主动设置校验，不能周期请求 ticker。
+另用代理／防火墙模拟断网、恢复后重连，检查旧价被清空且自动重订阅。
+报价、断线和恢复均应在下一次宿主刷新时显示，无额外等待；修改标的后旧 session 不得覆盖新配置。
+WebSocket 模式下 REST 只用于必要元数据和主动设置校验，不能周期请求 ticker。
+HTTP 模式下应立即请求并按配置间隔轮询，不建立 WebSocket；切换模式丢弃旧结果。
+`CryptoPricePollingTests` 使用注入 HTTP 传输测试分组、间隔、缺失标的、异常、取消、模式切换及迟到结果。
 
 ## 7. DLL 导出和架构
 
@@ -215,7 +217,9 @@ TMPluginGetInstance
 - OKX 直连失败时依次回退到区域入口、本地代理（Clash/v2rayN 常用端口）和 DoH 解析真实 IP；
 - Binance 日期交割合约不会覆盖永续；
 - 数据源连续快速切换，不能显示上一家的迟到响应；
-- 2 秒和 300 秒显示间隔边界，推送接收不断开、不触发 REST 轮询；
+- 连续推送在连续宿主刷新中直接显示；突发推送合并为最新值，不触发 REST 轮询；
+- WebSocket 忽略 `RefreshSeconds=300`；HTTP 按 2–300 秒刷新，模式与刷新时间保存后可恢复；
+- 模式切换、慢 HTTP 请求取消、旧结果隔离、错误恢复及空列表；
 - 重复标的、非法 symbol、未知市场组合；
 - 添加不存在的标的时弹出失败原因，列表和配置不变；更新为不存在的标的时保留原项；
 - 添加有效标的后切换数据源或价格类型，点击确定会重新校验整个列表，失败时不保存；

@@ -115,6 +115,18 @@ if(BUILD_TESTING)
     set_tests_properties(CryptoPriceStreamLifecycleTests PROPERTIES TIMEOUT 10)
 
     get_target_property(crypto_price_sources CryptoPrice SOURCES)
+    add_executable(CryptoPricePollingTests tests/PollingTests.cpp src/StreamClient.cpp
+        src/StreamProtocol.cpp src/MarketClient.cpp src/Json.cpp src/ExchangeJson.cpp src/Config.cpp)
+    target_include_directories(CryptoPricePollingTests PRIVATE src)
+    target_compile_features(CryptoPricePollingTests PRIVATE cxx_std_17)
+    target_compile_definitions(CryptoPricePollingTests PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_link_libraries(CryptoPricePollingTests PRIVATE winhttp)
+    if(MSVC)
+        target_compile_options(CryptoPricePollingTests PRIVATE /utf-8 /W4 /permissive- /EHsc)
+    endif()
+    add_test(NAME CryptoPricePollingTests COMMAND CryptoPricePollingTests)
+    set_tests_properties(CryptoPricePollingTests PROPERTIES TIMEOUT 20)
+
     add_executable(CryptoPriceStreamDisplayTests tests/StreamDisplayTests.cpp ${crypto_price_sources})
     target_include_directories(CryptoPriceStreamDisplayTests PRIVATE src)
     target_compile_features(CryptoPriceStreamDisplayTests PRIVATE cxx_std_17)

@@ -29,8 +29,8 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 | --- | --- |
 | `src/PluginInterface.h` | TrafficMonitor API v7 ABI |
 | `src/CryptoPricePlugin.*` | 插件入口、显示项、后台调度和格式化 |
-| `src/MarketClient.*` | REST 设置校验、手动诊断、推送元数据（非周期价格轮询） |
-| `src/StreamClient.*` | 常驻 WinHTTP WebSocket、心跳、重连、跨线程缓存 |
+| `src/MarketClient.*` | REST 设置校验、HTTP 轮询、手动诊断及推送元数据 |
+| `src/StreamClient.*` | WebSocket / HTTP 模式互斥会话、心跳、重连、轮询及跨线程缓存 |
 | `src/StreamProtocol.*` | 五家订阅协议、快照与增量合并 |
 | `src/JsonValue.h` | 严格 JSON 解析器 |
 | `src/Json.*` | Bitget、OKX、Binance 响应解析和符号规范化 |
@@ -44,17 +44,23 @@ CryptoPrice 是面向 TrafficMonitor 的 Windows C++ 多交易所行情插件，
 ## 4. 运行流程
 
 ```text
-首次 DataRequired / 配置变更 / 手动重连
-        └─ StreamClient 按（交易所、市场）建立常驻连接
+首次 DataRequired / 配置变更 / 手动刷新
+        └─ StreamClient 按（交易所、市场）启动会话
+              ├─ HTTP 模式：立即及定期 FetchCategory → 按 generation 发布 pending
+              └─ WebSocket 模式：建立常驻连接
               ├─ 必要时 REST 查询标的元数据（不查询价格）
               ├─ WebSocket 快照与增量 → 连接私有缓存
               └─ 按 generation 发布至 pending
-后续 DataRequired → 按显示间隔读取 pending → 更新界面
+后续每次 DataRequired → 读取 pending 最新推送 → 更新界面（无额外计时节流）
 ```
 
-不再 REST 轮询价格。`RefreshSeconds` 只节流 UI 消费缓存，网络推送持续接收。
-新错误或错误内容变化只立即更新对应标的，不刷新其他成功报价，也不推迟原显示期限；
-重复错误不绕过显示间隔，待显示报价在期限到达时仍可消费。缺失快照告警每连接每标的只发布一次。
+WebSocket 模式不轮询价格，也不设置显示间隔。网络线程收到推送即更新 pending，
+宿主每次调用 `DataRequired` 时应用最新报价及错误；多条推送按标的合并为最新值。
+网络线程不修改宿主可能正在读取的显示字符串，实际重绘频率由 TrafficMonitor 控制。
+HTTP 模式使用同一 pending 发布路径；按组立即请求，然后按 `RefreshSeconds` 调度；
+每组请求串行，慢请求结束后等待一个完整间隔，不积压补发。停止时中断等待，
+已在途 HTTP 请求可自行完成，但回调与取消互斥，不得发布旧结果；两种模式互斥且不自动回退。
+缺失快照告警每连接每标的只发布一次。
 断线立即清空旧价；新连接独立缓存，Bybit 快照前的 delta 被忽略。每 15 秒发心跳，
 75 秒无应用帧或 30 秒未取得任何标的更新则重连；安静／休市时用心跳确认存活。
 重连按 1、2、4…30 秒退避，取价成功后复位，不退回 REST。设置变化递增 generation
@@ -121,7 +127,7 @@ Binance 返回的 `priceChangePercent` 是百分数，解析器会除以 100；O
 | Kraken Futures | `wss://futures.kraken.com/ws/v1` | `ticker`、`heartbeat` |
 | Bybit | `wss://stream.bybit.com/v5/public/{spot,linear,inverse}` | `tickers.{真实标的}` |
 
-下面的 REST 端点仅用于设置校验、显式诊断和元数据，**不是运行时轮询路径**。
+下面的 REST 端点用于 HTTP 轮询、设置校验、显式诊断和元数据；WebSocket 模式不轮询价格。
 
 
 ### Bitget
@@ -180,7 +186,7 @@ BTCPERP 用 baseCoin+quoteCoin 映射为 BTCUSDC。price24hPcnt 本身是比例�
 `GET https://api.kraken.com/0/public/Ticker?asset_class=tokenized_asset` 返回代币化资产。
 仅解析规范的 `xUSD` 交易对，去掉后缀后按股票代码索引；排除 EUR、USDT 和 SPV 内部别名。
 `c[0]` 为最新成交价；不使用标记价、指数价。`o` 是当日开盘价，不是 24 小时前价格，
-因此不填充 `price24hPcnt`，也不为涨跌幅预留显示宽度。REST 仅用于设置校验；运行时\n按 `US-STOCK` 建立 WebSocket v2 订阅，AssetPairs 元数据映射 `AAPLx/USD` 等真实标识。
+因此不填充 `price24hPcnt`，也不为涨跌幅预留显示宽度。HTTP 模式使用 REST 最新价；WebSocket 模式按 `US-STOCK` 建立 v2 订阅，AssetPairs 元数据映射 `AAPLx/USD` 等真实标识。
 配置存储原始代码（允许 1–16 位字母），显示时附加 `/USD`，数据源名称显示 Kraken xStocks。
 
 ## 7. 显示项规则
@@ -198,6 +204,7 @@ BTCPERP 用 baseCoin+quoteCoin 映射为 BTCUSDC。price24hPcnt 本身是比例�
 
 ```ini
 [General]
+UpdateMode=websocket
 RefreshSeconds=5
 ShowChange=1
 PriceType=mark
@@ -221,7 +228,8 @@ Precision=-1
 - 每个 `[InstrumentN] DataSource` 可为 `bitget`、`okx`、`binance`、`kraken`、`bybit`；美股规范化为 `kraken`；
 - 缺少独立数据源键时读取旧 `[General] DataSource`，再缺省为 Bitget；保存成功后移除旧全局键；
 - 去重键为（数据源、市场、symbol），精度不影响去重；美股固定 Kraken；
-- `RefreshSeconds` 范围为 2–300，只节流 UI 更新，不影响 WebSocket 接收频率；
+- `UpdateMode` 为 `websocket`（缺省及未知值回退）或 `http`，两者互斥；
+- `RefreshSeconds` 范围 2–300，默认 5，仅控制 HTTP 轮询，WebSocket 完全忽略该间隔；
 - `PriceType` 可为 `last`、`mark`、`index`；
 - `Count` 范围为 0–16；
 - `Precision` 为每个标的独立的小数位数（-1 自动，0–10 固定），缺省或脏值回退 -1；

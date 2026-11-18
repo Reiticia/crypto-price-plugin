@@ -195,7 +195,6 @@ ITMPlugin::OptionReturn CryptoPricePlugin::ShowOptionsDialog(void* parent)
     if (!OptionsWindow::Show(static_cast<HWND>(parent), draft))
         return OR_OPTION_UNCHANGED;
 
-    draft.refreshSeconds = std::clamp(draft.refreshSeconds, 2, 300);
     if (!config_.Save(draft))
         MessageBoxW(static_cast<HWND>(parent), L"无法保存 CryptoPrice.ini，请检查配置目录权限。",
                     L"Crypto 行情", MB_OK | MB_ICONWARNING);
@@ -260,7 +259,7 @@ void CryptoPricePlugin::OnInitialize(ITrafficMonitor* application)
 
 const wchar_t* CryptoPricePlugin::GetCommandName(int commandIndex)
 {
-    return commandIndex == 0 ? L"重新连接行情推送" : nullptr;
+    return commandIndex == 0 ? L"立即刷新 / 重新连接行情" : nullptr;
 }
 
 void CryptoPricePlugin::OnPluginCommand(int commandIndex, void*, void*)
@@ -270,6 +269,7 @@ void CryptoPricePlugin::OnPluginCommand(int commandIndex, void*, void*)
 
 void CryptoPricePlugin::ApplySettings(Settings settings)
 {
+    settings.refreshSeconds = std::clamp(settings.refreshSeconds, 2, 300);
     if (settings.instruments.size() > kMaxInstruments)
         settings.instruments.resize(kMaxInstruments);
     {
@@ -306,7 +306,6 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
     ++generation_;
     {
         std::lock_guard<std::mutex> refreshLock(refreshMutex_);
-        nextRefresh_ = std::chrono::steady_clock::time_point{};
         streamStarted_ = false;
     }
     streams_.Stop();
@@ -315,29 +314,22 @@ void CryptoPricePlugin::ApplySettings(Settings settings)
 void CryptoPricePlugin::ApplyPendingResult()
 {
     std::lock_guard<std::mutex> refreshLock(refreshMutex_);
-    const auto now = std::chrono::steady_clock::now();
-    const bool fullRefresh = now >= nextRefresh_;
     PendingResult result;
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
         if (!hasPending_) return;
-        // Only a new/changed error bypasses the interval, and only for its own
-        // item. Keep successful quotes pending until the original deadline.
-        const bool urgentError = std::any_of(pending_.quotes.begin(), pending_.quotes.end(),
-            [](const QuoteResult& quote) { return quote.urgentError; });
-        if (!fullRefresh && !urgentError) return;
+        // Consume the latest pushed quotes on every host refresh, without an
+        // additional timer. Workers only write pending state: the host owns
+        // display strings and may retain their c_str() pointers while drawing.
         result = pending_;
-        for (auto& quote : pending_.quotes) quote.urgentError = false;
-        if (fullRefresh) hasPending_ = false;
+        hasPending_ = false;
     }
     if (result.generation != generation_.load()) return;
 
     std::lock_guard<std::mutex> lock(settingsMutex_);
-    if (fullRefresh) nextRefresh_ = now + std::chrono::seconds(settings_.refreshSeconds);
     const std::size_t count = (std::min)(result.quotes.size(), settings_.instruments.size());
     for (std::size_t index = 0; index < count; ++index)
-        if (fullRefresh || result.quotes[index].urgentError)
-            UpdateItem(index, result.quotes[index], settings_);
+        UpdateItem(index, result.quotes[index], settings_);
     RebuildAggregate();
     RebuildTooltip(settings_.instruments.size());
 }
@@ -350,13 +342,11 @@ void CryptoPricePlugin::QueueStreamQuotes(unsigned long long generation, const s
     {
         if (update.index >= pending_.quotes.size()) continue;
         auto& quote = pending_.quotes[update.index];
-        quote.urgentError = !update.success &&
-            (quote.urgentError || quote.success || quote.error != update.error);
         quote.success = update.success;
         quote.ticker = update.ticker;
         quote.error = update.error;
+        hasPending_ = true;
     }
-    hasPending_ = true;
 }
 
 void CryptoPricePlugin::StartRefresh(bool force)
@@ -369,13 +359,13 @@ void CryptoPricePlugin::StartRefresh(bool force)
         snapshot = settings_;
     }
     const auto generation = generation_.load();
-    nextRefresh_ = std::chrono::steady_clock::time_point{};
     streams_.Stop();
     {
         std::lock_guard<std::mutex> lock(pendingMutex_);
         pending_ = {generation, {}};
         for (const auto& instrument : snapshot.instruments)
-            pending_.quotes.push_back({instrument, false, {}, L"等待 WebSocket 行情"});
+            pending_.quotes.push_back({instrument, false, {}, snapshot.updateMode == UpdateMode::HttpPolling
+                ? L"等待 HTTP 行情" : L"等待 WebSocket 行情"});
         hasPending_ = false;
     }
     try

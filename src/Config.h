@@ -17,6 +17,12 @@ enum class DataSource
     Bybit,
 };
 
+enum class UpdateMode
+{
+    WebSocket,
+    HttpPolling,
+};
+
 enum class PriceType
 {
     Last,
@@ -42,7 +48,8 @@ struct Instrument
 struct Settings
 {
     std::vector<Instrument> instruments{{L"USDT-FUTURES", L"BTCUSDT"}};
-    int refreshSeconds{5};
+    UpdateMode updateMode{UpdateMode::WebSocket};
+    int refreshSeconds{5}; // HTTP polling only, 2..300 seconds.
     PriceType priceType{PriceType::Last};
     bool showChange{true};
 };

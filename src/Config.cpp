@@ -204,9 +204,10 @@ Settings ConfigStore::Load() const
     if (GetFileAttributesW(path_.c_str()) == INVALID_FILE_ATTRIBUTES)
         return settings;
 
+    settings.updateMode = ReadString(*loadPath, L"General", L"UpdateMode", L"websocket") == L"http"
+        ? UpdateMode::HttpPolling : UpdateMode::WebSocket;
     settings.refreshSeconds = std::clamp(
-        static_cast<int>(GetPrivateProfileIntW(L"General", L"RefreshSeconds", 5, loadPath->c_str())),
-        2, 300);
+        static_cast<int>(GetPrivateProfileIntW(L"General", L"RefreshSeconds", 5, loadPath->c_str())), 2, 300);
     settings.showChange = GetPrivateProfileIntW(L"General", L"ShowChange", 1, loadPath->c_str()) != 0;
     settings.priceType = PriceTypeFromKey(ReadString(*loadPath, L"General", L"PriceType", L"last"));
     // Migrate the old global source only when a per-instrument key is absent.
@@ -245,8 +246,8 @@ bool ConfigStore::Save(const Settings& settings) const
     };
 
     bool ok = true;
-    // Remove the obsolete global key; each saved instrument carries its own source.
-    ok &= write(L"General", L"RefreshSeconds", std::to_wstring(settings.refreshSeconds));
+    ok &= write(L"General", L"UpdateMode", settings.updateMode == UpdateMode::HttpPolling ? L"http" : L"websocket");
+    ok &= write(L"General", L"RefreshSeconds", std::to_wstring(std::clamp(settings.refreshSeconds, 2, 300)));
     ok &= write(L"General", L"ShowChange", settings.showChange ? L"1" : L"0");
     ok &= write(L"General", L"PriceType", PriceTypeKey(settings.priceType));
     const std::size_t count = (std::min)(settings.instruments.size(), kMaxInstruments);

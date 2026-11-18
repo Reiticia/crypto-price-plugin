@@ -6,7 +6,7 @@
 
 ### 新增
 
-- 五家行情及 Kraken xStocks 改为 WebSocket 订阅推送，合并快照与增量、心跳和退避重连；显示间隔与网络取价解耦，不自动退回 REST 轮询；REST 仅用于元数据与设置校验
+- 五家行情及 Kraken xStocks 改为 WebSocket 订阅推送，合并快照与增量、心跳和退避重连；推送报价无额外显示间隔，WebSocket 模式不自动退回 REST 轮询，其 REST 请求仅用于元数据与设置校验
 - Kraken 现货通过 WebSocket v2 `change_pct` 提供真实 24 小时涨跌幅
 - 新增 Kraken 加密现货、USD 永续及 Bybit 现货、USDT/USDC/币本位永续数据源；按元数据映射实际交易对并排除交割合约，支持独立来源配置和价格校验
 - 新增“美股（USD）”市场，使用 Kraken xStocks 美元最新价，支持股票代码输入、配置持久化及混合监控；美股不显示 24 小时涨跌幅
@@ -17,12 +17,13 @@
 
 ### 修复
 
-- 修复失败标的导致成功报价绕过显示间隔；错误变化仅即时更新对应项，保留其他待显示报价及原刷新期限
 - 缺失快照告警按连接／标的去重；使用 WebSocket 关闭操作取消阻塞接收，待接收与守卫退出后再释放句柄
 - 限制并精简插件悬停提示，避免与外汇插件合并后超过 TrafficMonitor 1.85.1 的 1024 字符上限，反复弹出“遇到不适当的参数”
 
 ### 变更
 
+- 行情模式可选 WebSocket 推送（默认）或 HTTP 轮询；WebSocket 不节流显示，HTTP 支持 2–300 秒刷新时间，模式切换取消旧会话并丢弃迟到结果
+- 配置新增 `UpdateMode=websocket/http`，`RefreshSeconds` 仅控制 HTTP 轮询；后台请求不阻塞界面，同组轮询不重叠、不积压补发
 - 常驻行情启动后保持 DLL 映射，避免网络线程在宿主 FreeLibrary 后执行失效代码；更新插件需要完全退出 TrafficMonitor
 - 使用统一的 CMake Presets，本地和 GitHub Actions 均输出至 `build/x64/Release/` 或 `build/win32/Release/`；构建最低要求为 CMake 3.21
 - 数据源改为按标的独立设置，支持混合交易所及同名交易对；旧全局数据源自动迁移，查询按数据源与市场分组，设置列表及悬停提示保留来源，任务栏隐藏交易所名称
