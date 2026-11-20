@@ -75,6 +75,34 @@ int main()
     cache.clear();
     ApplyStreamMessage(stock, R"({"channel":"ticker","type":"snapshot","data":[{"symbol":"AAPLx/USD","last":352.5,"change_pct":1}]})", cache);
     check(cache.at("AAPL").lastPrice == "352.5" && cache.at("AAPL").price24hPcnt.empty(), "stock does not invent a conventional stock change");
+    const std::string restrictedPairs = R"({"error":[],"result":{
+      "AAPLxUSD":{"wsname":"AAPLx/USD","status":"online","aclass_base":"tokenized_asset"},
+      "SNDKxUSD":{"wsname":"SNDKx/USD","status":"post_only","aclass_base":"tokenized_asset"},
+      "WBDxUSD":{"wsname":"WBDx/USD","status":"cancel_only","aclass_base":"tokenized_asset"},
+      "QQQxUSD":{"wsname":"QQQx/USD","status":"limit_only","aclass_base":"tokenized_asset"},
+      "OFFxUSD":{"wsname":"OFFx/USD","status":"offline","aclass_base":"tokenized_asset"},
+      "MISSxUSD":{"wsname":"MISSx/USD","aclass_base":"tokenized_asset"},
+      "XXBTZUSD":{"wsname":"XBT/USD","status":"post_only","aclass_base":"currency"}}})";
+    auto mixedStocks = BuildStreamPlan(DataSource::Kraken, L"US-STOCK",
+        {{L"US-STOCK", L"AAPL", 2, DataSource::Kraken}, {L"US-STOCK", L"SNDK", 2, DataSource::Kraken},
+         {L"US-STOCK", L"WBD", 2, DataSource::Kraken}, {L"US-STOCK", L"QQQ", 2, DataSource::Kraken}},
+        {restrictedPairs});
+    check(mixedStocks.symbols.size() == 4 && mixedStocks.symbols.at("SNDKx/USD") == "SNDK" &&
+          mixedStocks.subscriptions[0].find("SNDKx/USD") != std::string::npos,
+          "restricted stock trading must not block the whole group's public ticker subscription");
+    cache.clear();
+    ApplyStreamMessage(mixedStocks, R"({"channel":"ticker","type":"snapshot","data":[{"symbol":"SNDKx/USD","last":757.3}]})", cache);
+    check(cache.at("SNDK").lastPrice == "757.3" && cache.at("SNDK").price24hPcnt.empty(),
+          "post_only stock still accepts last-trade snapshots without fabricated change");
+    for (const wchar_t* symbol : {L"OFF", L"MISS"})
+    {
+        rejected = false;
+        try { planFor(DataSource::Kraken, L"US-STOCK", symbol, {restrictedPairs}); } catch (...) { rejected = true; }
+        check(rejected, "offline and missing stock status remain excluded");
+    }
+    rejected = false;
+    try { planFor(DataSource::Kraken, L"SPOT", L"BTCUSD", {restrictedPairs}); } catch (...) { rejected = true; }
+    check(rejected, "stock status allowance does not change crypto spot filtering");
     auto futures = planFor(DataSource::Kraken, L"USD-FUTURES", L"BTCUSD",
         {R"({"result":"success","instruments":[{"symbol":"PF_XBTUSD","base":"BTC","quote":"USD","tradeable":true,"suspended":false}]})"});
     check(futures.subscriptions[0].find("PF_XBTUSD") != std::string::npos, "Kraken Futures PF wire symbol");

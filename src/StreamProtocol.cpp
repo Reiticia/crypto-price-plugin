@@ -100,7 +100,12 @@ StreamPlan BuildStreamPlan(DataSource source, const std::wstring& category,
             (void)key;
             const std::string ws = info.Text("wsname");
             const bool stock = category == L"US-STOCK";
-            if (info.Text("status") != "online" || info.Text("aclass_base") != (stock ? "tokenized_asset" : "currency")) continue;
+            const std::string status = info.Text("status");
+            // Trading restrictions do not disable public market data. In particular,
+            // SNDKx/USD still supplies ticker snapshots while it is post_only.
+            const bool hasMarketData = status == "online" || (stock &&
+                (status == "post_only" || status == "limit_only" || status == "cancel_only"));
+            if (!hasMarketData || info.Text("aclass_base") != (stock ? "tokenized_asset" : "currency")) continue;
             if (stock)
             {
                 const auto split = ws.find("x/USD");

@@ -187,6 +187,7 @@ BTCPERP 用 baseCoin+quoteCoin 映射为 BTCUSDC。price24hPcnt 本身是比例�
 仅解析规范的 `xUSD` 交易对，去掉后缀后按股票代码索引；排除 EUR、USDT 和 SPV 内部别名。
 `c[0]` 为最新成交价；不使用标记价、指数价。`o` 是当日开盘价，不是 24 小时前价格，
 因此不填充 `price24hPcnt`，也不为涨跌幅预留显示宽度。HTTP 模式使用 REST 最新价；WebSocket 模式按 `US-STOCK` 建立 v2 订阅，AssetPairs 元数据映射 `AAPLx/USD` 等真实标识。
+xStocks 元数据接受 `online`、`post_only`、`limit_only`、`cancel_only`：交易限制不代表公共行情不可订阅；仍排除 `offline`、未知或缺失状态。加密现货过滤规则不变。
 配置存储原始代码（允许 1–16 位字母），显示时附加 `/USD`，数据源名称显示 Kraken xStocks。
 
 ## 7. 显示项规则
